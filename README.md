@@ -67,12 +67,12 @@ Die Konfiguration kommt aus Umgebungsvariablen bzw. einer `.env`-Datei (Vorlage:
 | `SMTP_HOST`, `SMTP_PORT` | Mailserver; Port `587` mit verpflichtendem STARTTLS, `465` mit implizitem TLS |
 | `SMTP_USER`, `SMTP_PASS` | Zugangsdaten des Mailkontos |
 | `MAIL_FROM` | Absender, z. B. `Hydrantenkarte <karte@example.at>`; muss beim Mailanbieter erlaubt sein |
+| `MAIL_TO` | Empfänger der Meldungen und Notizen. Leer lassen, um sie an das Postfach aus `MAIL_FROM` zu schicken. |
 
 ## Vor der Veröffentlichung anpassen
 
 Einige Angaben sind betreiberspezifisch und müssen vor dem ersten Einsatz auf die eigenen Daten geändert werden:
 
-- **Empfänger der Meldungen**: die Zieladresse in `server.mjs` (`to:` in `/api/report` und `/api/note`)
 - **User-Agent** für Nominatim und OSRM in `server.mjs`: eigene Seite bzw. Kontakt eintragen (von den Nutzungsbedingungen verlangt)
 - **Impressum und Datenschutz** in `public/impressum.html` und `public/datenschutz.html`: Betreiber, Anschrift, Kontakt, eingesetzte Dienste (Hosting, Mailanbieter, Postfach) und Aufbewahrungsfristen
 - **Kopfzeile**: Name unter dem Logo in `index.html` und den Unterseiten
@@ -145,6 +145,8 @@ npm run mail:test
 ```
 
 Häufige Ursachen: falsches Passwort (oder Anführungszeichen/Leerzeichen darum in der `.env`), `MAIL_FROM` weicht vom Mailkonto ab, ausgehender Port 587/465 ist gesperrt.
+
+Meldet das Skript Erfolg, aber im Absender-Postfach landet „Mail delivery failed“, lehnt der Mailserver des Empfängers ab. Große Anbieter (iCloud, Gmail, Outlook) verlangen SPF, DKIM und DMARC für die Absender-Domain. Abhilfe: DKIM beim Mailanbieter aktivieren und den DNS-Eintrag setzen, oder `MAIL_TO` leer lassen, damit Meldungen im eigenen Postfach landen.
 
 ### Abnahme
 

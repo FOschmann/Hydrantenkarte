@@ -4,7 +4,12 @@ import nodemailer from 'nodemailer';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 const root=path.dirname(fileURLToPath(import.meta.url));
-export const RECIPIENT='floh.schmann@icloud.com';
+// Empfänger der Meldungen: MAIL_TO, sonst die Absenderadresse aus MAIL_FROM (Postfach des Mailkontos)
+export function recipient(env){
+ const raw=env.MAIL_TO||env.MAIL_FROM||'';
+ const address=(raw.match(/<([^>]+)>/)?.[1]||raw).trim();
+ return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(address)?address:'';
+}
 export function createTransport(env){
  return nodemailer.createTransport({host:env.SMTP_HOST,port:Number(env.SMTP_PORT||587),secure:env.SMTP_PORT==='465',requireTLS:env.SMTP_PORT!=='465',auth:{user:env.SMTP_USER,pass:env.SMTP_PASS},connectionTimeout:10000,socketTimeout:15000});
 }
@@ -18,7 +23,8 @@ export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
  app.disable('x-powered-by');
  app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"});next();});
  app.use(express.json({limit:'8kb'}));
- const configured=Boolean(sendMail || (env.SMTP_HOST&&env.SMTP_USER&&env.SMTP_PASS&&env.MAIL_FROM));
+ const RECIPIENT=recipient(env);
+ const configured=Boolean((sendMail&&RECIPIENT) || (env.SMTP_HOST&&env.SMTP_USER&&env.SMTP_PASS&&env.MAIL_FROM&&RECIPIENT));
  const transport= !sendMail&&configured ? createTransport(env) : null;
  app.get('/api/health',(_req,res)=>res.json({ok:true,reporting:configured}));
  app.post('/api/report',rateLimit({windowMs:3600000,limit:5,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'Zu viele Meldungen. Bitte in einer Stunde erneut versuchen.'}}),async(req,res)=>{
