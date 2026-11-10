@@ -4,11 +4,11 @@ import nodemailer from 'nodemailer';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 const root=path.dirname(fileURLToPath(import.meta.url));
-export function createApp({sendMail,env=process.env}={}) {
+export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
  const app=express();
  if(env.TRUST_PROXY) app.set('trust proxy',Number(env.TRUST_PROXY));
  app.disable('x-powered-by');
- app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"});next();});
+ app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"});next();});
  app.use(express.json({limit:'8kb'}));
  const configured=Boolean(sendMail || (env.SMTP_HOST&&env.SMTP_USER&&env.SMTP_PASS&&env.MAIL_FROM));
  const transport= !sendMail&&configured ? nodemailer.createTransport({host:env.SMTP_HOST,port:Number(env.SMTP_PORT||587),secure:env.SMTP_PORT==='465',requireTLS:env.SMTP_PORT!=='465',auth:{user:env.SMTP_USER,pass:env.SMTP_PASS},connectionTimeout:10000,socketTimeout:15000}) : null;
@@ -46,13 +46,39 @@ export function createApp({sendMail,env=process.env}={}) {
   if(Date.now()<nextSearch)return res.status(429).json({error:'Bitte einen Moment warten und erneut suchen.'});
   nextSearch=Date.now()+1100;
   try {const url=new URL('https://nominatim.openstreetmap.org/search');url.search=new URLSearchParams({q:q+', Wien',format:'jsonv2',limit:'5',countrycodes:'at',viewbox:'16.17,48.34,16.59,48.10',bounded:'1'});
-   const response=await fetch(url,{headers:{'User-Agent':'HydrantenkarteWien/1.0 (https://hydranten.oschmanndigital.at)','Accept-Language':'de'},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();
+   const response=await fetchImpl(url,{headers:{'User-Agent':'HydrantenkarteWien/1.0 (https://hydranten.oschmanndigital.at)','Accept-Language':'de'},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();
    const results=(await response.json()).map(x=>({label:x.display_name,lat:Number(x.lat),lng:Number(x.lon)}));if(cache.size>300)cache.clear();cache.set(q,results);res.json(results);
   }catch{res.status(502).json({error:'Adresssuche derzeit nicht verfügbar. Wähle den Standort auf der Karte.'});}
  });
+
+ const walkCache=new Map();
+ app.get('/api/walk',rateLimit({windowMs:60000,limit:20,legacyHeaders:false,message:{error:'Bitte kurz warten.'}}),async(req,res)=>{
+  const parse=s=>String(s||'').split(';').map(p=>p.split(',').map(Number)).filter(p=>p.length===2&&p.every(Number.isFinite));
+  const from=parse(req.query.from),to=parse(req.query.to);
+  const inVienna=([lat,lng])=>lat>48.10&&lat<48.34&&lng>16.17&&lng<16.59;
+  if(from.length!==1||to.length<1||to.length>15||![...from,...to].every(inVienna)) return res.status(400).json({error:'Ungültige Wegberechnung.'});
+  const round=([lat,lng])=>[lat.toFixed(5),lng.toFixed(5)];
+  const key=[...from,...to].map(p=>round(p).join(',')).join(';');
+  if(walkCache.has(key)) return res.json(walkCache.get(key));
+  try {
+   const coords=[...from,...to].map(p=>{const [lat,lng]=round(p);return lng+','+lat;}).join(';');
+   const url=new URL(`https://routing.openstreetmap.de/routed-foot/table/v1/foot/${coords}`);
+   url.search=new URLSearchParams({sources:'0',annotations:'distance,duration'});
+   const response=await fetchImpl(url,{headers:{'User-Agent':'HydrantenkarteWien/1.0 (https://hydranten.oschmanndigital.at)'},signal:AbortSignal.timeout(8000)});
+   if(!response.ok) throw new Error();
+   const data=await response.json();
+   if(data.code!=='Ok'||!Array.isArray(data.distances?.[0])) throw new Error();
+   const pick=a=>a.slice(1).map(v=>Number.isFinite(v)?Math.round(v):null);
+   const result={distances:pick(data.distances[0]),durations:pick(data.durations?.[0]||[])};
+   if(walkCache.size>500) walkCache.clear(); walkCache.set(key,result); res.json(result);
+  } catch {res.status(502).json({error:'Wegberechnung derzeit nicht verfügbar.'});}
+ });
+ app.get('/sw.js',(req,res,next)=>{res.set({'Cache-Control':'no-cache','Service-Worker-Allowed':'/'});next();});
+ app.get('/manifest.webmanifest',(req,res,next)=>{res.type('application/manifest+json');next();});
  app.use('/vendor/leaflet',express.static(path.join(root,'node_modules/leaflet/dist')));
  app.use('/vendor/cluster',express.static(path.join(root,'node_modules/leaflet.markercluster/dist')));
- app.use(express.static(path.join(root,'public')));
+ app.use(express.static(path.join(root,'public'),{extensions:['html']}));
+ app.use((req,res)=>res.status(404).sendFile(path.join(root,'public/404.html')));
  app.use((err,req,res,next)=>res.status(err.status===413?413:400).json({error:'Ungültige Anfrage.'}));
  return app;
 }
