@@ -77,7 +77,12 @@ export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
  app.get('/manifest.webmanifest',(req,res,next)=>{res.type('application/manifest+json');next();});
  app.use('/vendor/leaflet',express.static(path.join(root,'node_modules/leaflet/dist')));
  app.use('/vendor/cluster',express.static(path.join(root,'node_modules/leaflet.markercluster/dist')));
- app.use(express.static(path.join(root,'public'),{extensions:['html']}));
+ app.use(express.static(path.join(root,'public'),{extensions:['html'],setHeaders(res,file,stat){
+  // HTML, Service Worker und Manifest immer neu prüfen; versionierte Dateien dürfen lange im Cache bleiben
+  if(/\.(html|webmanifest)$/.test(file)||file.endsWith('sw.js')) res.set('Cache-Control','no-cache');
+  else if(/\.(js|css)$/.test(file)&&res.req.query.v) res.set('Cache-Control','public, max-age=31536000, immutable');
+  else if(file.includes(path.join('public','data'))) res.set('Cache-Control','no-cache');
+ }}));
  app.use((req,res)=>res.status(404).sendFile(path.join(root,'public/404.html')));
  app.use((err,req,res,next)=>res.status(err.status===413?413:400).json({error:'Ungültige Anfrage.'}));
  return app;

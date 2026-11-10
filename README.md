@@ -122,6 +122,15 @@ Updates: Dateien ersetzen, in `/opt/hydrantenkarte` `npm ci --omit=dev` ausführ
 
 Ohne öffentliche IP lässt sich die App über einen Tunnel-Dienst (z. B. Cloudflare Tunnel) veröffentlichen. Der Tunnel-Client läuft auf demselben Host und leitet auf `http://127.0.0.1:3000` weiter. In der App `HOST=127.0.0.1`, `TRUST_PROXY=1` und `PUBLIC_URL` auf die öffentliche Adresse setzen. Router-Portfreigaben sind dann nicht nötig; Tunnel-Zugangsschlüssel nur auf dem Server speichern. Wird ein solcher Dienst genutzt, gehört er in die Datenschutzerklärung.
 
+### Updates ausrollen
+
+`app.js` und `style.css` werden mit einer Versionsnummer eingebunden (`/app.js?v=3`) und dürfen deshalb lange im Browser-Cache bleiben; HTML, Service Worker und Daten werden immer neu geprüft. **Bei jeder Änderung an `app.js` oder `style.css`** die Nummer erhöhen, und zwar überall gleich:
+
+- `?v=` in `public/index.html`, `impressum.html`, `datenschutz.html` und `404.html`
+- `VERSION` und die beiden Einträge in `PRECACHE` in `public/sw.js`
+
+`npm test` prüft, dass `index.html` und `sw.js` dieselbe Nummer verwenden. Liegt ein CDN wie Cloudflare davor, dort die Browser-Cache-Dauer auf „vorhandene Header respektieren“ stellen, sonst überschreibt es diese Header.
+
 ### Abnahme
 
 - `/api/health` liefert `ok: true`. `reporting: true` heißt nur, dass SMTP konfiguriert ist; eine echte Testmeldung schicken und den Eingang prüfen.
@@ -144,7 +153,7 @@ sudo docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/public/data:/ap
 sudo docker compose up -d --build
 ```
 
-Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund. Nach Änderungen an App-Dateien `VERSION` in `public/sw.js` erhöhen, damit der Service Worker sie neu lädt. Ein automatischer Zeitplan ist nicht eingerichtet.
+Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund. Ein automatischer Zeitplan ist nicht eingerichtet.
 
 Der Datensatz enthält nur Standort und Objekt-ID, keine Angaben zu Typ, Leistung oder Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen.
 
