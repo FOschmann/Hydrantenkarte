@@ -131,6 +131,21 @@ Ohne öffentliche IP lässt sich die App über einen Tunnel-Dienst (z. B. Cloudf
 
 `npm test` prüft, dass `index.html` und `sw.js` dieselbe Nummer verwenden. Liegt ein CDN wie Cloudflare davor, dort die Browser-Cache-Dauer auf „vorhandene Header respektieren“ stellen, sonst überschreibt es diese Header.
 
+### Mailversand prüfen
+
+Schlägt das Senden von Meldungen fehl, steht der Grund im Log (`journalctl -u hydrantenkarte` bzw. `docker compose logs app`), z. B. `EAUTH | 535 …` für falsche Zugangsdaten. Direkt testen, inklusive Testmail an den Empfänger:
+
+```sh
+# systemd
+cd /opt/hydrantenkarte && node --env-file=/etc/hydrantenkarte.env scripts/smtp-check.mjs
+# Docker
+sudo docker compose exec app node scripts/smtp-check.mjs
+# lokal
+npm run mail:test
+```
+
+Häufige Ursachen: falsches Passwort (oder Anführungszeichen/Leerzeichen darum in der `.env`), `MAIL_FROM` weicht vom Mailkonto ab, ausgehender Port 587/465 ist gesperrt.
+
 ### Abnahme
 
 - `/api/health` liefert `ok: true`. `reporting: true` heißt nur, dass SMTP konfiguriert ist; eine echte Testmeldung schicken und den Eingang prüfen.
