@@ -104,3 +104,8 @@ Der eingerichtete Betrieb verwendet einen eigenen Cloudflare-Tunnel. Installiere
 Veröffentlichte Anwendung: `hydranten.oschmanndigital.at` → `http://127.0.0.1:3000`. Cloudflared und App laufen im selben CT; `HOST=127.0.0.1`, `TRUST_PROXY=1` und `PUBLIC_URL=https://hydranten.oschmanndigital.at` setzen. Diese Route führt direkt zur App. Caddy wird nur für den optionalen LAN-Zugriff verwendet. Es sind keine eingehenden Router-Portfreigaben erforderlich. Cloudflare erstellt den DNS-Eintrag und terminiert öffentliches HTTPS.
 
 World4You: `SMTP_HOST=smtp.world4you.com`, `SMTP_PORT=587`, `SMTP_USER=hydranten@oschmanndigital.at`, `MAIL_FROM=hydranten@oschmanndigital.at`. Das Passwort gehört ausschließlich in die geschützte Serverkonfiguration.
+
+
+## Hydrantenhinweise
+
+Auf jedem Hydrantenmarker können Nutzer eine Notiz ergänzen. Sie wird mit Hydranten-ID und Standort an den Betreiber gemailt und erscheint erst nach manueller Prüfung. Es gibt keine ungeprüfte öffentliche Veröffentlichung und keine Notizdatenbank.
