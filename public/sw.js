@@ -1,11 +1,11 @@
 'use strict';
-// Version erhöhen, wenn sich Dateien der App ändern.
-const VERSION = 'v2';
+// Bei jeder Änderung an app.js oder style.css: VERSION hier und ?v= in den HTML-Dateien erhöhen.
+const VERSION = 'v3';
 const APP = 'hydranten-app-' + VERSION;
 const TILES = 'hydranten-tiles';
 const MAX_TILES = 600;
 const PRECACHE = [
-  '/', '/app.js', '/style.css', '/manifest.webmanifest', '/impressum', '/datenschutz',
+  '/', '/app.js?v=3', '/style.css?v=3', '/manifest.webmanifest', '/impressum', '/datenschutz',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/favicon-32.png',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css', '/vendor/leaflet/images/marker-icon.png', '/vendor/leaflet/images/marker-shadow.png',
   '/vendor/cluster/leaflet.markercluster.js', '/vendor/cluster/MarkerCluster.css', '/vendor/cluster/MarkerCluster.Default.css',
