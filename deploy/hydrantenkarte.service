@@ -9,6 +9,8 @@ User=hydrantenkarte
 Group=hydrantenkarte
 WorkingDirectory=/opt/hydrantenkarte
 EnvironmentFile=/etc/hydrantenkarte.env
+# Vom wöchentlichen Update geschriebene Daten (falls vorhanden)
+Environment=DATA_DIR=/var/lib/hydrantenkarte
 ExecStart=/usr/bin/node /opt/hydrantenkarte/server.mjs
 Restart=on-failure
 RestartSec=5

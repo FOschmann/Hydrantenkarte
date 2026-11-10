@@ -3,6 +3,7 @@ import {rateLimit} from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import {readFileSync, statSync} from 'node:fs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 // Empfänger der Meldungen: MAIL_TO, sonst die Absenderadresse aus MAIL_FROM (Postfach des Mailkontos)
 export function recipient(env){
@@ -17,11 +18,38 @@ export function createTransport(env){
 export function describeMailError(err){
  return [err?.code,err?.responseCode,err?.command,err?.response||err?.message].filter(Boolean).join(' | ');
 }
+
+// Daten für Vorschau-Angaben; werden neu gelesen, sobald das Update-Skript die Dateien ersetzt
+let cached=null;
+function mtime(file){try{return statSync(file).mtimeMs;}catch{return 0;}}
+// Aktualisierte Daten liegen in DATA_DIR (falls gesetzt und vorhanden), sonst gilt der Stand aus dem Repository
+export function dataFile(dir,name,env=process.env){
+ const bundled=path.join(dir,'public/data',name);
+ const updated=env.DATA_DIR&&path.join(env.DATA_DIR,name);
+ return updated&&mtime(updated)>mtime(bundled)?updated:bundled; // die neuere Datei gewinnt
+}
+export function loadData(dir,env=process.env){
+ const files=[path.join(dir,'public/index.html'),dataFile(dir,'hydrants.json',env),dataFile(dir,'districts.geojson',env)];
+ const stamp=files.join('|')+files.map(mtime).join('|');
+ if(cached?.stamp===stamp) return cached;
+ const hydrants=JSON.parse(readFileSync(files[1],'utf8'));
+ let districts=[];
+ try{districts=JSON.parse(readFileSync(files[2],'utf8')).features.map(f=>({nr:f.properties.nr,name:f.properties.name,polygons:f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates,count:0}));}catch{}
+ const byId=new Map(hydrants.data.map(([id,lat,lng])=>[String(id),{id:String(id),lat,lng}]));
+ cached={stamp,index:readFileSync(files[0],'utf8'),byId,districts};
+ for(const h of byId.values()){const d=districtOf(cached,h);if(d)d.count++;}
+ return cached;
+}
+function insideRing([x,y],ring){let c=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [xi,yi]=ring[i],[xj,yj]=ring[j];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c;}return c;}
+export function districtOf(data,h){
+ if(!h.district) h.district=data.districts.find(d=>d.polygons.some(p=>insideRing([h.lng,h.lat],p[0])&&!p.slice(1).some(r=>insideRing([h.lng,h.lat],r))))||null;
+ return h.district;
+}
 export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
  const app=express();
  if(env.TRUST_PROXY) app.set('trust proxy',Number(env.TRUST_PROXY));
  app.disable('x-powered-by');
- app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"});next();});
+ app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://mapsneu.wien.gv.at; connect-src 'self' https://mapsneu.wien.gv.at; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"});next();});
  app.use(express.json({limit:'8kb'}));
  const RECIPIENT=recipient(env);
  const configured=Boolean((sendMail&&RECIPIENT) || (env.SMTP_HOST&&env.SMTP_USER&&env.SMTP_PASS&&env.MAIL_FROM&&RECIPIENT));
@@ -87,8 +115,35 @@ export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
    if(walkCache.size>500) walkCache.clear(); walkCache.set(key,result); res.json(result);
   } catch {res.status(502).json({error:'Wegberechnung derzeit nicht verfügbar.'});}
  });
+
+ // Startseite mit passenden Vorschau-Angaben (Open Graph) für geteilte Links
+ const escapeHtml=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ app.get(['/','/index.html'],(req,res,next)=>{
+  try {
+   const data=loadData(root,env);
+   let title='Hydranten Wien',description='Karte aller Hydranten in Wien aus dem offenen Datensatz der Stadt Wien. Nächste Hydranten zu Fuß finden und Navigation starten.';
+   const h=data.byId.get(String(req.query.h||''));
+   const d=data.districts.find(x=>String(x.nr)===String(req.query.bezirk||''));
+   if(h){const z=districtOf(data,h);title=`Hydrant ${h.id}${z?` · ${z.nr}. ${z.name}`:''} – Hydranten Wien`;description=`Standort ${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}. Auf der Karte öffnen und zu Fuß navigieren.`;}
+   else if(d){title=`Hydranten im ${d.nr}. Bezirk, ${d.name} – Hydranten Wien`;description=`${new Intl.NumberFormat('de-AT').format(d.count)} Hydranten im ${d.nr}. Bezirk auf der Karte.`;}
+   const base=(env.PUBLIC_URL||`${req.protocol}://${req.get('host')}`).replace(/\/$/,'');
+   const url=base+req.originalUrl;
+   const html=data.index
+    .replace(/<title>[^<]*<\/title>/,`<title>${escapeHtml(title)}</title>`)
+    .replace(/(<meta property="og:title" content=")[^"]*/,`$1${escapeHtml(title)}`)
+    .replace(/(<meta property="og:description" content=")[^"]*/,`$1${escapeHtml(description)}`)
+    .replace(/(<meta name="description" content=")[^"]*/,`$1${escapeHtml(description)}`)
+    .replace(/(<meta property="og:image" content=")[^"]*/,`$1${escapeHtml(base)}/og-image.png`)
+    .replace('<meta property="og:site_name"',`<meta property="og:url" content="${escapeHtml(url)}">\n<meta property="og:site_name"`);
+   res.set('Cache-Control','no-cache').type('html').send(html);
+  } catch(err){next(err);}
+ });
  app.get('/sw.js',(req,res,next)=>{res.set({'Cache-Control':'no-cache','Service-Worker-Allowed':'/'});next();});
  app.get('/manifest.webmanifest',(req,res,next)=>{res.type('application/manifest+json');next();});
+ app.get('/data/:name',(req,res,next)=>{
+  if(!['hydrants.json','districts.geojson'].includes(req.params.name)) return next();
+  res.sendFile(dataFile(root,req.params.name,env),{headers:{'Cache-Control':'no-cache'}},err=>err&&next(err));
+ });
  app.use('/vendor/leaflet',express.static(path.join(root,'node_modules/leaflet/dist')));
  app.use('/vendor/cluster',express.static(path.join(root,'node_modules/leaflet.markercluster/dist')));
  app.use(express.static(path.join(root,'public'),{extensions:['html'],setHeaders(res,file,stat){

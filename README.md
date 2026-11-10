@@ -25,10 +25,11 @@ Kein Build-Schritt, keine Datenbank: ein kleiner Node.js-Server und statische Da
 | `public/index.html`, `app.js`, `style.css` | Oberfläche mit [Leaflet](https://leafletjs.com) und Leaflet.markercluster |
 | `public/sw.js`, `manifest.webmanifest`, `icons/` | Service Worker, Web-App-Manifest, Logo und App-Icons |
 | `public/impressum.html`, `datenschutz.html`, `404.html` | Rechtliche Seiten und Fehlerseite |
-| `public/data/hydrants.geojson` | Hydranten der Stadt Wien |
+| `public/data/hydrants.json` | Hydranten der Stadt Wien im kompakten Format `[id, lat, lng]` (~390 KB statt 2,6 MB GeoJSON) |
 | `public/data/districts.geojson` | Bezirksgrenzen, auf ca. 10 m vereinfacht |
 | `scripts/update-data.mjs` | Lädt beide Datensätze neu und prüft sie |
-| `deploy/` | systemd-Dienst und Installationsskript für den Betrieb ohne Docker |
+| `public/og-image.png` | Vorschaubild für geteilte Links |
+| `deploy/` | systemd-Dienst, wöchentlicher Update-Timer und Installationsskript für den Betrieb ohne Docker |
 | `compose.yaml`, `Dockerfile`, `Caddyfile` | Betrieb mit Docker Compose und Caddy als HTTPS-Proxy |
 
 ### API
@@ -62,6 +63,7 @@ Die Konfiguration kommt aus Umgebungsvariablen bzw. einer `.env`-Datei (Vorlage:
 | --- | --- |
 | `PUBLIC_URL` | Öffentliche Adresse der Seite, z. B. `https://karte.example.at`. Formulare werden nur von dieser Herkunft angenommen. Lokal weglassen. |
 | `PORT` | Port des Servers (Standard `3000`) |
+| `DATA_DIR` | Ordner für aktualisierte Daten (systemd: `/var/lib/hydrantenkarte`). Ist die Datei dort neuer als die im Repository, wird sie verwendet. |
 | `HOST` | Adresse, an die der Server bindet (Standard `0.0.0.0`; hinter einem lokalen Proxy `127.0.0.1`) |
 | `TRUST_PROXY` | Anzahl vorgeschalteter Proxys, z. B. `1` hinter Caddy oder einem Tunnel. Wichtig für korrekte Anfragelimits. |
 | `SMTP_HOST`, `SMTP_PORT` | Mailserver; Port `587` mit verpflichtendem STARTTLS, `465` mit implizitem TLS |
@@ -157,20 +159,42 @@ Meldet das Skript Erfolg, aber im Absender-Postfach landet „Mail delivery fail
 
 ## Daten aktualisieren
 
+`scripts/update-data.mjs` lädt Hydranten (`ogdwien:HYDRANTOGD`) und Bezirksgrenzen (`ogdwien:BEZIRKSGRENZEOGD`) vom WFS der Stadt Wien. Es prüft Objekt-IDs, Koordinaten, die gemeldete Gesamtzahl und alle 23 Bezirke und ersetzt die Dateien erst nach vollständigem Download; bei Fehlern bleiben die alten Daten erhalten. Ein Neustart ist nicht nötig, der Server liefert neue Dateien sofort aus.
+
+### Automatisch (systemd)
+
+`deploy/install-native.sh` richtet den Timer `hydrantenkarte-update.timer` ein: jeden Sonntag gegen 4:30 Uhr (mit bis zu einer Stunde Zufallsverzögerung, verpasste Läufe werden nachgeholt). Die Daten landen in `/var/lib/hydrantenkarte`, nicht im Git-Ordner, damit `git pull` nie an lokalen Änderungen scheitert.
+
 ```sh
-npm run data:update
+systemctl list-timers hydrantenkarte-update.timer   # nächster Lauf
+systemctl start hydrantenkarte-update.service       # sofort aktualisieren
+journalctl -u hydrantenkarte-update -n 20           # Ergebnis des letzten Laufs
 ```
 
-Das Skript lädt Hydranten (`ogdwien:HYDRANTOGD`) und Bezirksgrenzen (`ogdwien:BEZIRKSGRENZEOGD`) vom WFS der Stadt Wien. Es prüft Koordinaten, die gemeldete Gesamtzahl und alle 23 Bezirke und ersetzt die Dateien erst nach vollständigem Download; bei Fehlern bleiben die alten Daten erhalten. Danach neu bauen bzw. den Dienst neu starten.
+Bei einer bestehenden Installation die neuen Dienstdateien einmalig übernehmen:
 
-Mit Docker, ohne Node auf dem Host:
+```sh
+cp deploy/hydrantenkarte.service deploy/hydrantenkarte-update.* /etc/systemd/system/
+systemctl daemon-reload
+systemctl restart hydrantenkarte
+systemctl enable --now hydrantenkarte-update.timer
+```
+
+### Manuell
+
+```sh
+npm run data:update                                  # schreibt nach public/data
+DATA_DIR=/var/lib/hydrantenkarte npm run data:update # schreibt nach DATA_DIR
+```
+
+Mit Docker, ohne Node auf dem Host (z. B. als wöchentlicher Cronjob):
 
 ```sh
 sudo docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/public/data:/app/public/data" app node scripts/update-data.mjs
 sudo docker compose up -d --build
 ```
 
-Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund. Ein automatischer Zeitplan ist nicht eingerichtet.
+Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund.
 
 Der Datensatz enthält nur Standort und Objekt-ID, keine Angaben zu Typ, Leistung oder Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen.
 
@@ -178,12 +202,12 @@ Der Datensatz enthält nur Standort und Objekt-ID, keine Angaben zu Typ, Leistun
 
 | Dienst | Wofür | Wer verbindet sich |
 | --- | --- | --- |
-| [OpenStreetMap-Kacheln](https://operations.osmfoundation.org/policies/tiles/) | Kartenhintergrund | Browser der Nutzer |
+| [basemap.at](https://basemap.at) | Grundkarte und Luftbild (CC BY 4.0, Namensnennung „Grundkarte: basemap.at“) | Browser der Nutzer |
 | [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) | Adresssuche | Server (max. eine neue Anfrage je 1,1 s) |
 | [FOSSGIS-Routing (OSRM)](https://routing.openstreetmap.de) | Fußwegdistanzen | Server (max. 20 Anfragen je Minute und IP) |
 | Eigener SMTP-Server | Meldungen und Notizen | Server |
 
-Die öffentlichen OSM-Dienste sind für geringe Last gedacht; ihre Nutzungsbedingungen gelten. Bei größerer Last eigene oder kommerzielle Dienste einsetzen. Der Service Worker speichert nur bereits angesehene Kartenkacheln (höchstens 600) und lädt keine vor.
+Nominatim und das FOSSGIS-Routing sind für geringe Last gedacht; ihre Nutzungsbedingungen gelten. Bei größerer Last eigene oder kommerzielle Dienste einsetzen. Der Service Worker speichert nur bereits angesehene Kartenkacheln (höchstens 600) und lädt keine vor.
 
 ## Datenschutz und Sicherheit
 
@@ -208,5 +232,6 @@ Die Karte ist eine Orientierungshilfe. Für Vollständigkeit, Richtigkeit, Zugä
 ## Datenquellen und Lizenzen
 
 - Hydranten und Bezirksgrenzen: Stadt Wien – [data.wien.gv.at](https://data.wien.gv.at), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de)
-- Kartendaten: © [OpenStreetMap-Mitwirkende](https://www.openstreetmap.org/copyright), ODbL
+- Grundkarte und Luftbild: [basemap.at](https://basemap.at), CC BY 4.0
+- Adresssuche und Fußwege: © [OpenStreetMap-Mitwirkende](https://www.openstreetmap.org/copyright), ODbL
 - Leaflet und Leaflet.markercluster: BSD-2-Clause bzw. MIT
