@@ -1,130 +1,186 @@
 # Hydrantenkarte Wien
 
-Responsive Karte aller Hydranten in Wien für **[hydranten.oschmanndigital.at](https://hydranten.oschmanndigital.at)**, betrieben auf dem eigenen Proxmox-Server.
+Eine schlanke Web-App, die alle Hydranten in Wien auf einer Karte zeigt. Sie findet die nächstgelegenen Hydranten zu Fuß, funktioniert auch offline und lässt sich auf dem Smartphone wie eine App installieren. Grundlage ist der offene Hydrantendatensatz der Stadt Wien.
 
-- 12.736 Hydranten aus dem offenen Datensatz der Stadt Wien (Datenabruf vom 06.11.2026)
-- Standort per GPS, Adresssuche oder Tippen auf die Karte
-- Die fünf nächsten Hydranten nach **Fußweg** (Luftlinie als Rückfall, wenn der Routingdienst nicht erreichbar ist)
-- **Bezirksauswahl**: Grenze, Anzahl und nur die Hydranten des gewählten Bezirks
+Kein Build-Schritt, keine Datenbank: ein kleiner Node.js-Server und statische Dateien.
+
+## Funktionen
+
+- **Karte aller Hydranten** (rund 12.700 Punkte), auf der Übersicht zu Gruppen zusammengefasst
+- **Standort** per GPS, Adresssuche oder Tippen auf die Karte
+- **Die fünf nächsten Hydranten nach Fußweg**, mit Gehzeit; ist der Routingdienst nicht erreichbar, wird die Luftlinie angezeigt
+- **Bezirksauswahl** mit Grenze und Anzahl der Hydranten
 - **Teilen-Links** für einzelne Hydranten (`/?h=<ID>`) und Bezirke (`/?bezirk=<Nr>`)
-- **Offline nutzbar und installierbar (PWA)**: Hydrantendaten, App und bereits angesehene Kartenausschnitte bleiben auf dem Gerät
-- Navigation zu Fuß über Google Maps oder Apple Karten
-- Fehlende Hydranten melden und Notizen zu bestehenden Hydranten ergänzen (per E-Mail zur Prüfung)
-- Am Smartphone: Karte im Vollbild, Suche und Ergebnisse in einem hochziehbaren Panel
-- Impressum (`/impressum`) und Datenschutzerklärung (`/datenschutz`)
-- SMTP mit TLS, Eingabevalidierung, Honeypot und Anfragelimits
+- **Navigation** zu Fuß über Google Maps oder Apple Karten
+- **Offline-Modus und Installation (PWA)**: App, Hydrantendaten und bereits angesehene Kartenausschnitte bleiben auf dem Gerät
+- **Mitmachen**: fehlende Hydranten melden und Notizen zu bestehenden Hydranten ergänzen; beides kommt per E-Mail zur Prüfung, nichts wird ungeprüft veröffentlicht
+- **Smartphone-Layout**: Karte im Vollbild, Suche und Ergebnisse in einem hochziehbaren Panel
+- Impressum, Datenschutzerklärung und 404-Seite als eigene Seiten
 
 ## Aufbau
 
 | Pfad | Inhalt |
 | --- | --- |
-| `server.mjs` | Express-Server: statische Dateien, `/api/search` (Nominatim), `/api/walk` (Fußwege), `/api/report`, `/api/note`, `/api/health` |
-| `public/index.html`, `app.js`, `style.css` | Oberfläche (Leaflet + MarkerCluster, ohne Build-Schritt) |
-| `public/sw.js`, `manifest.webmanifest`, `icons/` | Offline-Modus, Installation, Logo und App-Icons |
+| `server.mjs` | Express-Server: statische Dateien und API |
+| `public/index.html`, `app.js`, `style.css` | Oberfläche mit [Leaflet](https://leafletjs.com) und Leaflet.markercluster |
+| `public/sw.js`, `manifest.webmanifest`, `icons/` | Service Worker, Web-App-Manifest, Logo und App-Icons |
 | `public/impressum.html`, `datenschutz.html`, `404.html` | Rechtliche Seiten und Fehlerseite |
-| `public/data/hydrants.geojson` | Hydranten (Stadt Wien, `ogdwien:HYDRANTOGD`) |
-| `public/data/districts.geojson` | Bezirksgrenzen, auf ca. 10 m vereinfacht (Stadt Wien, `ogdwien:BEZIRKSGRENZEOGD`) |
+| `public/data/hydrants.geojson` | Hydranten der Stadt Wien |
+| `public/data/districts.geojson` | Bezirksgrenzen, auf ca. 10 m vereinfacht |
 | `scripts/update-data.mjs` | Lädt beide Datensätze neu und prüft sie |
 | `deploy/` | systemd-Dienst und Installationsskript für den Betrieb ohne Docker |
+| `compose.yaml`, `Dockerfile`, `Caddyfile` | Betrieb mit Docker Compose und Caddy als HTTPS-Proxy |
+
+### API
+
+| Route | Zweck |
+| --- | --- |
+| `GET /api/health` | Status; `reporting: true`, wenn SMTP konfiguriert ist |
+| `GET /api/search?q=…` | Adresssuche über Nominatim (gedrosselt, mit Cache) |
+| `GET /api/walk?from=lat,lng&to=lat,lng;…` | Fußwegdistanzen über OSRM (bis zu 15 Ziele, mit Cache) |
+| `POST /api/report` | Meldung eines fehlenden Hydranten per E-Mail |
+| `POST /api/note` | Notiz zu einem bestehenden Hydranten per E-Mail |
 
 ## Lokal starten
 
-Node.js 24 oder neuer installieren, dann:
+Voraussetzung: Node.js 24 oder neuer.
 
 ```sh
 npm ci
 npm start
 ```
 
-http://localhost:3000 öffnen. Ohne SMTP bleibt die Karte funktionsfähig; Meldungen liefern ausdrücklich eine Fehlermeldung und gehen nicht stillschweigend verloren. Für lokalen SMTP-Test `.env.example` nach `.env` kopieren, `PUBLIC_URL=http://localhost:3000` setzen und `TRUST_PROXY` entfernen.
+Dann http://localhost:3000 öffnen. Ohne SMTP-Konfiguration funktioniert die Karte vollständig; Meldungen und Notizen geben dann eine klare Fehlermeldung zurück und gehen nicht stillschweigend verloren.
 
-## Proxmox ab null
+GPS und Service Worker brauchen HTTPS oder `localhost`.
 
-1. Debian-13-Installations-ISO von https://www.debian.org/distrib/ herunterladen und in Proxmox unter dem ISO-Speicher hochladen.
-2. VM `hydrantenkarte` anlegen: 2 vCPU, 2 GB RAM, 16 GB Disk, Netzwerk-Bridge `vmbr0`. Das ist eine Startkonfiguration für geringe Last. Debian installieren, SSH-Server aktivieren, gewöhnlichen Benutzer mit sudo verwenden.
-3. Der VM eine feste LAN-IP bzw. DHCP-Reservierung geben. SSH nur im LAN/VPN zugänglich machen. Die Proxmox-Verwaltung wird nicht für diese Website veröffentlicht.
-4. Docker Engine und Compose-Plugin gemäß https://docs.docker.com/engine/install/debian/ installieren.
-5. Projekt in die VM kopieren oder nach GitHub-Veröffentlichung klonen:
+## Konfiguration
 
-```sh
-git clone https://github.com/FOschmann/Hydrantenkarte.git
-cd Hydrantenkarte
-cp .env.example .env
-chmod 600 .env
-nano .env
-```
+Die Konfiguration kommt aus Umgebungsvariablen bzw. einer `.env`-Datei (Vorlage: `.env.example`). Die `.env` gehört nie ins Repository.
 
-6. SMTP-Felder ausfüllen: Host, Port, Benutzer, Passwort und `MAIL_FROM`, z. B. `Hydrantenkarte <hydranten@oschmanndigital.at>`. Der Absender muss beim Mailanbieter erlaubt sein. Port 587 verwendet verpflichtendes STARTTLS, Port 465 implizites TLS. Empfänger ist fest `floh.schmann@icloud.com`.
-7. DNS: A-Record `hydranten.oschmanndigital.at` auf die öffentliche IPv4-Adresse des Anschlusses setzen. AAAA nur setzen, wenn die VM über diese IPv6-Adresse tatsächlich erreichbar ist. Bei dynamischer IP DDNS vorsehen.
-8. Router: TCP 80 und 443 auf die VM weiterleiten; UDP 443 optional für HTTP/3. Bei CGNAT/DS-Lite ohne eingehende Erreichbarkeit ist ein Tunnel oder eine andere öffentliche Anbindung erforderlich. Diese Compose-Datei setzt direkte Erreichbarkeit voraus.
-9. Starten:
+| Variable | Bedeutung |
+| --- | --- |
+| `PUBLIC_URL` | Öffentliche Adresse der Seite, z. B. `https://karte.example.at`. Formulare werden nur von dieser Herkunft angenommen. Lokal weglassen. |
+| `PORT` | Port des Servers (Standard `3000`) |
+| `HOST` | Adresse, an die der Server bindet (Standard `0.0.0.0`; hinter einem lokalen Proxy `127.0.0.1`) |
+| `TRUST_PROXY` | Anzahl vorgeschalteter Proxys, z. B. `1` hinter Caddy oder einem Tunnel. Wichtig für korrekte Anfragelimits. |
+| `SMTP_HOST`, `SMTP_PORT` | Mailserver; Port `587` mit verpflichtendem STARTTLS, `465` mit implizitem TLS |
+| `SMTP_USER`, `SMTP_PASS` | Zugangsdaten des Mailkontos |
+| `MAIL_FROM` | Absender, z. B. `Hydrantenkarte <karte@example.at>`; muss beim Mailanbieter erlaubt sein |
 
-```sh
-sudo docker compose up -d --build
-sudo docker compose ps
-sudo docker compose logs --tail=80 app caddy
-```
+## Vor der Veröffentlichung anpassen
 
-Caddy beschafft das Zertifikat automatisch, sobald DNS und eingehende Ports stimmen. Der App-Port 3000 ist nur im Docker-Netz sichtbar. `TRUST_PROXY=1` ist für genau diesen einen Reverse Proxy vorgesehen.
+Einige Angaben sind betreiberspezifisch und müssen vor dem ersten Einsatz auf die eigenen Daten geändert werden:
 
-## Abnahme auf dem Server
+- **Empfänger der Meldungen**: die Zieladresse in `server.mjs` (`to:` in `/api/report` und `/api/note`)
+- **User-Agent** für Nominatim und OSRM in `server.mjs`: eigene Seite bzw. Kontakt eintragen (von den Nutzungsbedingungen verlangt)
+- **Impressum und Datenschutz** in `public/impressum.html` und `public/datenschutz.html`: Betreiber, Anschrift, Kontakt, eingesetzte Dienste (Hosting, Mailanbieter, Postfach) und Aufbewahrungsfristen
+- **Kopfzeile**: Name unter dem Logo in `index.html` und den Unterseiten
+- **Domain** im `Caddyfile` und in `PUBLIC_URL`
 
-- `https://hydranten.oschmanndigital.at/api/health` liefert `ok: true`; `reporting: true` bedeutet nur, dass SMTP konfiguriert ist, noch nicht, dass die Zustellung geprüft ist.
-- Karte öffnen, Standort/GPS und Adresssuche prüfen. GPS erfordert HTTPS oder localhost.
-- Echte Testmeldung senden und den Eingang im iCloud-Postfach kontrollieren. Zustellung und Spam-Einstufung lassen sich erst mit den richtigen SMTP-Zugangsdaten prüfen.
-- **Vor Veröffentlichung:** in `public/impressum.html` und `public/datenschutz.html` die gelb markierte Anschrift (`[Anschrift ergänzen]`) eintragen und die Aufbewahrungsfrist für Meldungs-E-Mails (derzeit zwölf Monate) prüfen.
-- `/?h=<Hydranten-ID>` öffnet direkt den Hydranten; eine Standortsuche zeigt „Fußweg“ neben den Ergebnissen. Steht dort „Luftlinie“, ist `routing.openstreetmap.de` vom Server aus nicht erreichbar.
-- In den Entwicklertools unter „Application“ prüfen, ob der Service Worker aktiv ist. Danach Flugmodus: Karte, Hydranten und Nächste-Suche funktionieren weiter.
+## Betrieb
+
+### Mit Docker Compose und Caddy
+
+Geeignet für eine kleine VM (z. B. 2 vCPU, 2 GB RAM, 16 GB Disk), etwa unter Proxmox mit Debian.
+
+1. [Docker Engine und Compose-Plugin](https://docs.docker.com/engine/install/) installieren.
+2. Projekt holen und konfigurieren:
+
+   ```sh
+   git clone <repository-url> hydrantenkarte
+   cd hydrantenkarte
+   cp .env.example .env
+   chmod 600 .env
+   nano .env
+   ```
+
+3. Im `Caddyfile` die eigene Domain eintragen.
+4. DNS-Eintrag (A, ggf. AAAA) auf die öffentliche IP setzen und TCP 80/443 (optional UDP 443 für HTTP/3) auf den Server weiterleiten. Ohne eingehende Erreichbarkeit (z. B. CGNAT/DS-Lite) einen Tunnel verwenden, siehe unten.
+5. Starten:
+
+   ```sh
+   sudo docker compose up -d --build
+   sudo docker compose ps
+   sudo docker compose logs --tail=80 app caddy
+   ```
+
+Caddy holt das TLS-Zertifikat automatisch, sobald DNS und Ports stimmen. Der App-Port ist nur im Docker-Netz erreichbar; der App-Container läuft schreibgeschützt und ohne zusätzliche Rechte.
+
+### Ohne Docker als systemd-Dienst
+
+Ein unprivilegierter Debian-Container (z. B. LXC unter Proxmox, 2 Kerne, 2 GB RAM, 8 GB Disk) reicht aus.
+
+1. `nodejs`, `npm` und optional `caddy` installieren.
+2. Projekt nach `/opt/hydrantenkarte` kopieren und als root `sh deploy/install-native.sh` ausführen. Der Dienst läuft als eigener Systembenutzer ohne Anmeldeshell.
+3. Konfiguration ausschließlich in `/etc/hydrantenkarte.env` (Modus 600) pflegen, Änderungen mit `systemctl restart hydrantenkarte` übernehmen.
+4. Bei Caddy auf demselben Host `reverse_proxy 127.0.0.1:3000` verwenden und in der App `HOST=127.0.0.1` und `TRUST_PROXY=1` setzen.
+
+Updates: Dateien ersetzen, in `/opt/hydrantenkarte` `npm ci --omit=dev` ausführen, Dienst neu starten.
+
+### Hinter einem Tunnel
+
+Ohne öffentliche IP lässt sich die App über einen Tunnel-Dienst (z. B. Cloudflare Tunnel) veröffentlichen. Der Tunnel-Client läuft auf demselben Host und leitet auf `http://127.0.0.1:3000` weiter. In der App `HOST=127.0.0.1`, `TRUST_PROXY=1` und `PUBLIC_URL` auf die öffentliche Adresse setzen. Router-Portfreigaben sind dann nicht nötig; Tunnel-Zugangsschlüssel nur auf dem Server speichern. Wird ein solcher Dienst genutzt, gehört er in die Datenschutzerklärung.
+
+### Abnahme
+
+- `/api/health` liefert `ok: true`. `reporting: true` heißt nur, dass SMTP konfiguriert ist; eine echte Testmeldung schicken und den Eingang prüfen.
+- Standort per GPS und Adresssuche testen. Neben den Ergebnissen sollte „Fußweg“ stehen; steht dort „Luftlinie“, erreicht der Server den Routingdienst nicht.
+- `/?h=<Hydranten-ID>` öffnet direkt den Hydranten.
+- In den Entwicklertools prüfen, ob der Service Worker aktiv ist, dann im Flugmodus testen: Karte, Hydranten und Nächste-Suche funktionieren weiter.
 
 ## Daten aktualisieren
 
 ```sh
 npm run data:update
-sudo docker compose up -d --build
 ```
 
-Alternativ ohne Node auf dem Host:
+Das Skript lädt Hydranten (`ogdwien:HYDRANTOGD`) und Bezirksgrenzen (`ogdwien:BEZIRKSGRENZEOGD`) vom WFS der Stadt Wien. Es prüft Koordinaten, die gemeldete Gesamtzahl und alle 23 Bezirke und ersetzt die Dateien erst nach vollständigem Download; bei Fehlern bleiben die alten Daten erhalten. Danach neu bauen bzw. den Dienst neu starten.
+
+Mit Docker, ohne Node auf dem Host:
 
 ```sh
 sudo docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/public/data:/app/public/data" app node scripts/update-data.mjs
 sudo docker compose up -d --build
 ```
 
-Das Update lädt Hydranten und Bezirksgrenzen, validiert Punktkoordinaten, die vom WFS gemeldete Gesamtzahl und alle 23 Bezirke und ersetzt die Dateien erst nach vollständigem Download. Installierte Apps erhalten neue Daten beim nächsten Aufruf im Hintergrund; nach Änderungen an App-Dateien `VERSION` in `public/sw.js` erhöhen. Kein automatischer Aktualisierungszeitplan ist eingerichtet. Die Website zeigt den Zeitstempel des Datenabrufs.
+Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund. Nach Änderungen an App-Dateien `VERSION` in `public/sw.js` erhöhen, damit der Service Worker sie neu lädt. Ein automatischer Zeitplan ist nicht eingerichtet.
 
-Datenquelle: **Stadt Wien – data.wien.gv.at**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de), [Datensatzbeschreibung](https://www.data.gv.at/datasets/e8b9bb31-5ad1-4cc3-a0ae-177c93671d0b?locale=de), WFS-Layer `ogdwien:HYDRANTOGD`. Vollständigkeit bezieht sich auf den gelieferten Datensatz, nicht auf alle tatsächlich existierenden oder betriebsbereiten Hydranten. Die Daten enthalten Standort und Objekt-ID, keine bestätigte Leistungsangabe, keinen Typ und keine Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen. Nutzerhinweise werden per E-Mail geprüft und nicht automatisch in den amtlichen Datenbestand aufgenommen.
+Der Datensatz enthält nur Standort und Objekt-ID, keine Angaben zu Typ, Leistung oder Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen.
 
-## Betrieb und Datenschutz
+## Externe Dienste
 
-GPS-Auswertung und die Suche der nächsten Kandidaten erfolgen im Browser. Für die 15 nächstgelegenen Hydranten fragt der Server über `/api/walk` die Fußwegdistanz beim [FOSSGIS-Routingdienst](https://routing.openstreetmap.de) (OSRM, Profil „foot“) ab; der Dienst sieht nur die Server-IP. Anfragen sind auf 20 je Minute und IP begrenzt und werden im Arbeitsspeicher zwischengespeichert. Die Adresssuche verwendet einen Server-Proxy mit maximal einer neuen Anfrage je 1,1 Sekunden, kurzem In-Memory-Cache und ohne Autovervollständigung. Kartenausschnitte werden direkt von OpenStreetMap geladen; der Service Worker speichert nur bereits angesehene Kacheln (höchstens 600) und lädt nichts vor. Es gelten die [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/), die [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) und die [Hinweise des FOSSGIS-Routings](https://routing.openstreetmap.de). Bei größerer Last eigene oder kommerzielle Karten-, Geocoding- und Routingdienste einsetzen.
+| Dienst | Wofür | Wer verbindet sich |
+| --- | --- | --- |
+| [OpenStreetMap-Kacheln](https://operations.osmfoundation.org/policies/tiles/) | Kartenhintergrund | Browser der Nutzer |
+| [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) | Adresssuche | Server (max. eine neue Anfrage je 1,1 s) |
+| [FOSSGIS-Routing (OSRM)](https://routing.openstreetmap.de) | Fußwegdistanzen | Server (max. 20 Anfragen je Minute und IP) |
+| Eigener SMTP-Server | Meldungen und Notizen | Server |
 
-Berichte werden ausschließlich per SMTP übertragen und nicht in einer zusätzlichen Datenbank gespeichert. Mail-Aufbewahrung wird im Postfach geregelt. Das Meldeformular ist auf fünf Versuche je IP und Stunde begrenzt; diese Grenze ist pro Serverprozess und wird bei Neustart zurückgesetzt. Keine SMTP-Geheimnisse in Git committen. `.env` ist von Git und dem Docker-Build ausgeschlossen. Proxmox-Backups der VM einschließlich Caddy-Zertifikatsvolumes und `.env` geschützt aufbewahren.
+Die öffentlichen OSM-Dienste sind für geringe Last gedacht; ihre Nutzungsbedingungen gelten. Bei größerer Last eigene oder kommerzielle Dienste einsetzen. Der Service Worker speichert nur bereits angesehene Kartenkacheln (höchstens 600) und lädt keine vor.
 
-## Prüfung
+## Datenschutz und Sicherheit
+
+- Keine Cookies, kein Tracking, keine Datenbank, keine Zugriffsprotokolle in der App.
+- GPS-Standort und Suche der nächsten Kandidaten laufen im Browser. Für Fußwege und Adresssuche fragt der Server die externen Dienste an; diese sehen nur die Server-IP.
+- Meldungen werden ausschließlich per SMTP verschickt. Eingaben werden geprüft, ein Honeypot-Feld fängt einfache Bots ab, fremde Herkünfte werden abgewiesen, und es gibt Anfragelimits pro IP. Diese Limits liegen im Arbeitsspeicher und werden bei einem Neustart zurückgesetzt.
+- Strenge Sicherheits-Header (Content-Security-Policy, `nosniff`, Referrer-Policy, Permissions-Policy).
+- SMTP-Zugangsdaten nur in `.env` bzw. `/etc/hydrantenkarte.env`; beide sind von Git und dem Docker-Build ausgeschlossen. Server-Backups mit diesen Dateien geschützt aufbewahren.
+
+## Tests
 
 ```sh
 npm test
 ```
 
-Tests prüfen gültige Meldungen, festen Empfänger, fehlerhafte Eingaben, fremde Origins, fehlenden/fehlerhaften SMTP-Versand, Ratenbegrenzung, den Fußweg-Proxy (Validierung, Cache, Fehlerfall), die Auslieferung von Impressum, Datenschutz, Manifest und 404-Seite sowie Vollständigkeit/Plausibilität von Hydranten- und Bezirksdaten. GitHub Actions führt sie bei jedem Push aus. Echter SMTP-Versand und Produktivbereitstellung sind separat zu prüfen.
+Die Tests prüfen Meldungen und Notizen (Empfänger, Validierung, fremde Herkunft, fehlender oder fehlerhafter SMTP-Versand, Anfragelimits), den Fußweg-Proxy (Validierung, Cache, Fehlerfall), die Auslieferung von Impressum, Datenschutz, Manifest und 404-Seite sowie Vollständigkeit und Plausibilität der Hydranten- und Bezirksdaten. GitHub Actions führt sie bei jedem Push aus. Echter Mailversand und der Produktivbetrieb sind gesondert zu prüfen.
 
-## Direkter Betrieb als Dienst im Proxmox-CT
+## Hinweis
 
-Alternativ zu Docker ist ein unprivilegierter Debian-13-CT ausreichend (2 Kerne, 2 GB RAM, 8 GB Disk, DHCP auf vmbr0). Installiere dort `nodejs npm unzip curl caddy`, entpacke das Projekt nach `/opt/hydrantenkarte` und führe als root `sh deploy/install-native.sh` aus. Der Dienst läuft als eigener Systembenutzer ohne Anmeldeshell. Konfiguration/SMTP liegt ausschließlich in `/etc/hydrantenkarte.env` (Modus 600). Änderungen mit `systemctl restart hydrantenkarte` übernehmen.
+Die Karte ist eine Orientierungshilfe. Für Vollständigkeit, Richtigkeit, Zugänglichkeit und Betriebsbereitschaft der Hydranten gibt es keine Gewähr. Im Notfall immer den Notruf wählen.
 
-Für Caddy auf diesem CT gilt `reverse_proxy 127.0.0.1:3000` statt `app:3000`. In der App-Konfiguration `TRUST_PROXY=1` verwenden. Bei einem Test über HTTP im LAN `PUBLIC_URL=http://<CT-IP>` setzen; für die öffentliche Domain anschließend `PUBLIC_URL=https://hydranten.oschmanndigital.at` und den passenden Caddy-Host setzen. GPS ist beim HTTP-LAN-Test browserbedingt nicht verfügbar.
+## Datenquellen und Lizenzen
 
-Updates: Projektdateien ersetzen, in `/opt/hydrantenkarte` `npm ci --omit=dev` ausführen und `systemctl restart hydrantenkarte`. Proxmox-Backups des CT umfassen Daten und Konfiguration. Zugangsdaten weder ins Repository noch in ein öffentliches Archiv aufnehmen.
-
-## Cloudflare Tunnel im CT
-
-Der eingerichtete Betrieb verwendet einen eigenen Cloudflare-Tunnel. Installiere `cloudflared` aus dem offiziellen Cloudflare-Paketrepository und verbinde den Tunnel als systemd-Dienst. Den Zugangsschlüssel ausschließlich auf dem Server speichern, niemals im Repository.
-
-Veröffentlichte Anwendung: `hydranten.oschmanndigital.at` → `http://127.0.0.1:3000`. Cloudflared und App laufen im selben CT; `HOST=127.0.0.1`, `TRUST_PROXY=1` und `PUBLIC_URL=https://hydranten.oschmanndigital.at` setzen. Diese Route führt direkt zur App. Caddy wird nur für den optionalen LAN-Zugriff verwendet. Es sind keine eingehenden Router-Portfreigaben erforderlich. Cloudflare erstellt den DNS-Eintrag und terminiert öffentliches HTTPS.
-
-World4You: `SMTP_HOST=smtp.world4you.com`, `SMTP_PORT=587`, `SMTP_USER=hydranten@oschmanndigital.at`, `MAIL_FROM=hydranten@oschmanndigital.at`. Das Passwort gehört ausschließlich in die geschützte Serverkonfiguration.
-
-
-## Hydrantenhinweise
-
-Auf jedem Hydrantenmarker können Nutzer eine Notiz ergänzen. Sie wird mit Hydranten-ID und Standort an den Betreiber gemailt und erscheint erst nach manueller Prüfung. Es gibt keine ungeprüfte öffentliche Veröffentlichung und keine Notizdatenbank.
+- Hydranten und Bezirksgrenzen: Stadt Wien – [data.wien.gv.at](https://data.wien.gv.at), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de)
+- Kartendaten: © [OpenStreetMap-Mitwirkende](https://www.openstreetmap.org/copyright), ODbL
+- Leaflet und Leaflet.markercluster: BSD-2-Clause bzw. MIT
