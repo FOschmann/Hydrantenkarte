@@ -33,6 +33,9 @@ document.querySelectorAll('.basemap-switch button').forEach(b => { b.onclick = (
 const clusters = L.markerClusterGroup({chunkedLoading: true, maxClusterRadius: 45, disableClusteringAtZoom: 18});
 map.addLayer(clusters);
 const icon = L.divIcon({className: 'hydrant', html: '<i></i>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -8]});
+const noteIcon = L.divIcon({className: 'hydrant has-note', html: '<i></i><b>i</b>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -8]});
+const notesByHydrant = new Map();
+const dateFmt = new Intl.DateTimeFormat('de-AT', {day: 'numeric', month: 'numeric', year: 'numeric'});
 
 let hydrants = [], byId = new Map(), districts = [], districtLayer = null, activeDistrict = '';
 let origin = null, originMarker = null, accuracyCircle = null, mode = null;
@@ -153,8 +156,43 @@ function popup(h) {
   const actions = document.createElement('div');
   actions.className = 'popup-actions';
   actions.append(button('Teilen', () => share(h), 'popup-btn'), button('＋ Notiz', () => openNote(h), 'popup-btn'));
-  el.append(title, meta, nav, actions);
+  el.append(title, meta);
+  const list = notesByHydrant.get(h.id);
+  if (list?.length) el.append(notesBlock(list));
+  el.append(nav, actions);
   return el;
+}
+
+function notesBlock(list) {
+  const box = document.createElement('div');
+  box.className = 'notes';
+  const head = document.createElement('div');
+  head.className = 'notes-head';
+  head.textContent = list.length === 1 ? 'Hinweis' : `${list.length} Hinweise`;
+  box.append(head, ...list.map(n => {
+    const p = document.createElement('p');
+    p.textContent = n.text;
+    const d = document.createElement('small');
+    d.textContent = dateFmt.format(new Date(n.date));
+    p.append(d);
+    return p;
+  }));
+  return box;
+}
+
+async function loadNotes() {
+  try {
+    const r = await fetch('/api/notes');
+    if (!r.ok) return;
+    const list = await r.json();
+    for (const h of notesByHydrant.keys()) byId.get(h)?.marker.setIcon(icon);
+    notesByHydrant.clear();
+    for (const n of list) {
+      if (!notesByHydrant.has(n.hydrantId)) notesByHydrant.set(n.hydrantId, []);
+      notesByHydrant.get(n.hydrantId).push(n);
+    }
+    for (const id of notesByHydrant.keys()) byId.get(id)?.marker.setIcon(noteIcon);
+  } catch { /* Notizen sind optional */ }
 }
 
 function showHydrant(h) {
@@ -188,10 +226,18 @@ function renderResults(list, walking) {
       const t = document.createElement('small'); t.textContent = minutes(h.walkTime) + ' zu Fuß'; dist.append(t);
     }
     top.append(num, title, dist);
+    const hint = notesByHydrant.get(h.id);
+    if (hint?.length) {
+      const note = document.createElement('p');
+      note.className = 'result-note';
+      note.textContent = hint[0].text + (hint.length > 1 ? ` (+${hint.length - 1})` : '');
+      card.append(top, note);
+    }
     const actions = document.createElement('div');
     actions.className = 'result-actions';
     actions.append(button('Auf Karte', () => showHydrant(h)), link('Google ↗', navigation(h)), link('Apple ↗', navigation(h, true)), button('Teilen', () => share(h)));
-    card.append(top, actions);
+    if (!card.contains(top)) card.append(top);
+    card.append(actions);
     return card;
   }));
 }
@@ -377,7 +423,7 @@ $('note-form').onsubmit = async e => {
   e.preventDefault();
   if (!noteHydrant) return;
   const ok = await postForm('/api/note', {hydrantId: noteHydrant.id, lat: noteHydrant.lat, lng: noteHydrant.lng, description: $('note-description').value, email: $('note-email').value, website: $('note-website').value},
-    $('note-status'), $('send-note'), 'Danke! Deine Notiz ist zur Prüfung eingegangen.');
+    $('note-status'), $('send-note'), 'Danke! Deine Notiz wird geprüft und erscheint danach bei diesem Hydranten.');
   if (ok) $('note-form').reset();
 };
 
@@ -393,7 +439,7 @@ addEventListener('resize', () => map.invalidateSize());
 
 /* ---------- Daten laden ---------- */
 const getJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(url); return r.json(); });
-Promise.all([getJSON('/data/hydrants.json'), getJSON('/data/districts.geojson').catch(() => null)]).then(([data, districtData]) => {
+Promise.all([getJSON('/data/hydrants.json'), getJSON('/data/districts.geojson').catch(() => null)]).then(async ([data, districtData]) => {
   hydrants = data.data.map(([id, lat, lng]) => {
     const h = {id: String(id), lat, lng, district: null};
     h.marker = L.marker([lat, lng], {icon, keyboard: false}).bindPopup(() => popup(h));
@@ -417,6 +463,7 @@ Promise.all([getJSON('/data/hydrants.json'), getJSON('/data/districts.geojson').
   const params = new URLSearchParams(location.search);
   selectDistrict(params.get('bezirk') || '', Boolean(params.get('bezirk')) && !params.get('h'));
   status(origin ? 'Hydranten geladen.' : 'Bereit. Wähle deinen Standort.');
+  await loadNotes();
   const linked = byId.get(params.get('h') || '');
   if (linked) { showHydrant(linked); history.replaceState(null, '', '/?h=' + linked.id); }
   rank();

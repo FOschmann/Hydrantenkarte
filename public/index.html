@@ -23,10 +23,10 @@
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/vendor/cluster/MarkerCluster.css">
 <link rel="stylesheet" href="/vendor/cluster/MarkerCluster.Default.css">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
 <script defer src="/vendor/leaflet/leaflet.js"></script>
 <script defer src="/vendor/cluster/leaflet.markercluster.js"></script>
-<script defer src="/app.js?v=4"></script>
+<script defer src="/app.js?v=5"></script>
 </head>
 <body>
 <header>
@@ -88,7 +88,7 @@
 
 <dialog id="report-dialog"><form id="report-form"><div class="dialog-head"><span class="eyebrow">FEHLENDER HYDRANT</span><button type="button" class="close" data-close="report-dialog" aria-label="Schließen">×</button></div><h2>Ein Hydrant fehlt?</h2><p>Setze zuerst den genauen Standort auf der Karte. Deine Meldung wird per E-Mail zur Prüfung gesendet.</p><button type="button" id="report-pick" class="outline">⌖ Meldepunkt auf der Karte setzen</button><p id="report-location">Noch kein Meldepunkt ausgewählt.</p><label for="description">Was ist vor Ort?</label><textarea id="description" required minlength="10" maxlength="2000" placeholder="Z. B. roter Hydrant vor Hausnummer 12 …"></textarea><label for="email">Deine E-Mail <span>(optional, für Rückfragen)</span></label><input id="email" type="email" maxlength="254" placeholder="du@beispiel.at"><div class="trap" aria-hidden="true"><input id="website" tabindex="-1" autocomplete="off"></div><p class="small">Standort, Beschreibung und deine freiwillige E-Mail werden an den Betreiber übermittelt und dort geprüft. <a href="/datenschutz">Datenschutz</a></p><button class="primary" id="send-report">Meldung senden ↗</button><p id="report-status" role="status"></p></form></dialog>
 
-<dialog id="note-dialog"><form id="note-form"><div class="dialog-head"><span class="eyebrow">HYDRANTENHINWEIS</span><button type="button" class="close" data-close="note-dialog" aria-label="Schließen">×</button></div><h2>Notiz ergänzen</h2><p id="note-hydrant"></p><label for="note-description">Deine Notiz</label><textarea id="note-description" required minlength="3" maxlength="1000" placeholder="Zum Beispiel: Standort hinter dem Zaun …"></textarea><label for="note-email">E-Mail <span>(optional, für Rückfragen)</span></label><input id="note-email" type="email" maxlength="254" placeholder="du@beispiel.at"><div class="trap" aria-hidden="true"><input id="note-website" tabindex="-1" autocomplete="off"></div><p class="small">Deine Notiz wird zuerst per E-Mail geprüft und nicht sofort öffentlich angezeigt. <a href="/datenschutz">Datenschutz</a></p><button class="primary" id="send-note">Notiz zur Prüfung senden ↗</button><p id="note-status" role="status"></p></form></dialog>
+<dialog id="note-dialog"><form id="note-form"><div class="dialog-head"><span class="eyebrow">HYDRANTENHINWEIS</span><button type="button" class="close" data-close="note-dialog" aria-label="Schließen">×</button></div><h2>Notiz ergänzen</h2><p id="note-hydrant"></p><label for="note-description">Deine Notiz</label><textarea id="note-description" required minlength="3" maxlength="1000" placeholder="Zum Beispiel: steht hinter dem Zaun, Zugang über die Einfahrt …"></textarea><label for="note-email">E-Mail <span>(optional, für Rückfragen)</span></label><input id="note-email" type="email" maxlength="254" placeholder="du@beispiel.at"><div class="trap" aria-hidden="true"><input id="note-website" tabindex="-1" autocomplete="off"></div><p class="small">Deine Notiz wird geprüft und danach für alle sichtbar bei diesem Hydranten angezeigt. Deine E-Mail-Adresse wird nie veröffentlicht. <a href="/datenschutz">Datenschutz</a></p><button class="primary" id="send-note">Notiz zur Prüfung senden ↗</button><p id="note-status" role="status"></p></form></dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>

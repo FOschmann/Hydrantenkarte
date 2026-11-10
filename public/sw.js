@@ -1,11 +1,11 @@
 'use strict';
 // Bei jeder Änderung an app.js oder style.css: VERSION hier und ?v= in den HTML-Dateien erhöhen.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const APP = 'hydranten-app-' + VERSION;
 const TILES = 'hydranten-tiles';
 const MAX_TILES = 800;
 const PRECACHE = [
-  '/', '/app.js?v=4', '/style.css?v=4', '/manifest.webmanifest', '/impressum', '/datenschutz',
+  '/', '/app.js?v=5', '/style.css?v=5', '/manifest.webmanifest', '/impressum', '/datenschutz',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/favicon-32.png',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css', '/vendor/leaflet/images/marker-icon.png', '/vendor/leaflet/images/marker-shadow.png',
   '/vendor/cluster/leaflet.markercluster.js', '/vendor/cluster/MarkerCluster.css', '/vendor/cluster/MarkerCluster.Default.css',
@@ -54,7 +54,15 @@ self.addEventListener('fetch', e => {
     }));
     return;
   }
-  if (url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+  // Veröffentlichte Notizen auch offline anzeigen
+  if (url.origin === location.origin && url.pathname === '/api/notes') {
+    e.respondWith(fetch(request).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(APP).then(c => c.put(request, copy)); }
+      return res;
+    }).catch(async () => (await caches.match(request)) || Response.error()));
+    return;
+  }
+  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/notiz/')) return;
 
   if (request.mode === 'navigate') {
     // Seiten: zuerst Netz, offline die gespeicherte Version

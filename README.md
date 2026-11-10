@@ -13,7 +13,7 @@ Kein Build-Schritt, keine Datenbank: ein kleiner Node.js-Server und statische Da
 - **Teilen-Links** für einzelne Hydranten (`/?h=<ID>`) und Bezirke (`/?bezirk=<Nr>`)
 - **Navigation** zu Fuß über Google Maps oder Apple Karten
 - **Offline-Modus und Installation (PWA)**: App, Hydrantendaten und bereits angesehene Kartenausschnitte bleiben auf dem Gerät
-- **Mitmachen**: fehlende Hydranten melden und Notizen zu bestehenden Hydranten ergänzen; beides kommt per E-Mail zur Prüfung, nichts wird ungeprüft veröffentlicht
+- **Mitmachen**: fehlende Hydranten melden (per E-Mail an den Betreiber) und **Notizen** zu bestehenden Hydranten ergänzen. Notizen erscheinen nach Freigabe für alle beim Hydranten; nichts wird ungeprüft veröffentlicht
 - **Smartphone-Layout**: Karte im Vollbild, Suche und Ergebnisse in einem hochziehbaren Panel
 - Impressum, Datenschutzerklärung und 404-Seite als eigene Seiten
 
@@ -40,7 +40,9 @@ Kein Build-Schritt, keine Datenbank: ein kleiner Node.js-Server und statische Da
 | `GET /api/search?q=…` | Adresssuche über Nominatim (gedrosselt, mit Cache) |
 | `GET /api/walk?from=lat,lng&to=lat,lng;…` | Fußwegdistanzen über OSRM (bis zu 15 Ziele, mit Cache) |
 | `POST /api/report` | Meldung eines fehlenden Hydranten per E-Mail |
-| `POST /api/note` | Notiz zu einem bestehenden Hydranten per E-Mail |
+| `POST /api/note` | Notiz zu einem Hydranten: wird gespeichert, Betreiber bekommt eine E-Mail mit Prüf-Link |
+| `GET /api/notes` | Veröffentlichte Notizen (Hydrant, Text, Datum; ohne E-Mail-Adressen) |
+| `GET/POST /notiz/<id>?sig=…` | Prüfseite: veröffentlichen, ablehnen, wieder entfernen. Nur mit signiertem Link aus der E-Mail erreichbar |
 
 ## Lokal starten
 
@@ -63,7 +65,7 @@ Die Konfiguration kommt aus Umgebungsvariablen bzw. einer `.env`-Datei (Vorlage:
 | --- | --- |
 | `PUBLIC_URL` | Öffentliche Adresse der Seite, z. B. `https://karte.example.at`. Formulare werden nur von dieser Herkunft angenommen. Lokal weglassen. |
 | `PORT` | Port des Servers (Standard `3000`) |
-| `DATA_DIR` | Ordner für aktualisierte Daten (systemd: `/var/lib/hydrantenkarte`). Ist die Datei dort neuer als die im Repository, wird sie verwendet. |
+| `DATA_DIR` | Beschreibbarer Ordner für Notizen und aktualisierte Daten (Standard `./var`; systemd: `/var/lib/hydrantenkarte`; Docker: Volume unter `/data`). Ist eine Datendatei dort neuer als die im Repository, wird sie verwendet. |
 | `HOST` | Adresse, an die der Server bindet (Standard `0.0.0.0`; hinter einem lokalen Proxy `127.0.0.1`) |
 | `TRUST_PROXY` | Anzahl vorgeschalteter Proxys, z. B. `1` hinter Caddy oder einem Tunnel. Wichtig für korrekte Anfragelimits. |
 | `SMTP_HOST`, `SMTP_PORT` | Mailserver; Port `587` mit verpflichtendem STARTTLS, `465` mit implizitem TLS |
@@ -198,6 +200,14 @@ Installierte Apps holen neue Daten beim nächsten Aufruf im Hintergrund.
 
 Der Datensatz enthält nur Standort und Objekt-ID, keine Angaben zu Typ, Leistung oder Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen.
 
+## Notizen freigeben
+
+1. Jemand ergänzt im Popup eines Hydranten eine Notiz.
+2. Die Notiz wird in `DATA_DIR/notes.json` gespeichert (Status „wartet“), und an `MAIL_TO` geht eine E-Mail mit einem Link „Veröffentlichen oder ablehnen“.
+3. Der Link öffnet eine Prüfseite mit Text, Hydrant und Kontaktadresse. Ein Klick auf **Veröffentlichen** zeigt die Notiz sofort für alle beim Hydranten an (Popup, Ergebnisliste, eigenes Marker-Symbol). Über denselben Link lässt sie sich später **wieder entfernen**.
+
+Die Links sind mit einem geheimen Schlüssel signiert (`DATA_DIR/notes.secret`, wird beim ersten Start erzeugt). Wer den Schlüssel löscht, macht alle bisherigen Prüf-Links ungültig. Freigegeben wird nur per Formular (POST), damit Link-Scanner von Mailprogrammen nichts versehentlich veröffentlichen. Veröffentlicht werden ausschließlich Text, Hydrant und Datum, nie die E-Mail-Adresse; bei abgelehnten Notizen wird sie gelöscht. `notes.json` und `notes.secret` gehören ins Backup.
+
 ## Externe Dienste
 
 | Dienst | Wofür | Wer verbindet sich |
@@ -223,7 +233,7 @@ Nominatim und das FOSSGIS-Routing sind für geringe Last gedacht; ihre Nutzungsb
 npm test
 ```
 
-Die Tests prüfen Meldungen und Notizen (Empfänger, Validierung, fremde Herkunft, fehlender oder fehlerhafter SMTP-Versand, Anfragelimits), den Fußweg-Proxy (Validierung, Cache, Fehlerfall), die Auslieferung von Impressum, Datenschutz, Manifest und 404-Seite sowie Vollständigkeit und Plausibilität der Hydranten- und Bezirksdaten. GitHub Actions führt sie bei jedem Push aus. Echter Mailversand und der Produktivbetrieb sind gesondert zu prüfen.
+Die Tests prüfen Meldungen und Notizen (Speichern, Prüf-Link, Freigabe, Entfernen, keine E-Mail-Adressen in der öffentlichen Liste, Empfänger, Validierung, fremde Herkunft, fehlender oder fehlerhafter SMTP-Versand, Anfragelimits), den Fußweg-Proxy (Validierung, Cache, Fehlerfall), die Auslieferung von Impressum, Datenschutz, Manifest und 404-Seite sowie Vollständigkeit und Plausibilität der Hydranten- und Bezirksdaten. GitHub Actions führt sie bei jedem Push aus. Echter Mailversand und der Produktivbetrieb sind gesondert zu prüfen.
 
 ## Hinweis
 
