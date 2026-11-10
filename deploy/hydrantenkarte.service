@@ -1,0 +1,21 @@
+[Unit]
+Description=Hydrantenkarte Wien
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hydrantenkarte
+Group=hydrantenkarte
+WorkingDirectory=/opt/hydrantenkarte
+EnvironmentFile=/etc/hydrantenkarte.env
+ExecStart=/usr/bin/node /opt/hydrantenkarte/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+{
+  "name": "Hydranten Wien",
+  "short_name": "Hydranten",
+  "description": "Karte aller Hydranten in Wien aus dem offenen Datensatz der Stadt Wien.",
+  "lang": "de-AT",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f8f2",
+  "theme_color": "#172b29",
+  "icons": [
+    {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    {"src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml"}
+  ]
+}

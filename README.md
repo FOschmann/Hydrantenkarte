@@ -1,14 +1,31 @@
 # Hydrantenkarte Wien
 
-Responsive Karte für **hydranten.oschmanndigital.at**, für den eigenen Server. Helle Oberfläche mit dunklem Grün und terrakottafarbenen Hydrantenmarkierungen.
+Responsive Karte aller Hydranten in Wien für **[hydranten.oschmanndigital.at](https://hydranten.oschmanndigital.at)**, betrieben auf dem eigenen Proxmox-Server.
 
-- 12.736 amtliche Hydranten im beigefügten Datenabruf vom 06.11.2026
-- GPS, Adresssuche oder manuelle Standortwahl
-- Fünf nächste Hydranten nach Luftlinie; Marker werden auf der Übersicht gruppiert
-- Fußgängernavigation über Google Maps oder Apple Karten
-- Meldung fehlender Hydranten mit frei gewähltem Kartenpunkt und automatischer E-Mail
+- 12.736 Hydranten aus dem offenen Datensatz der Stadt Wien (Datenabruf vom 06.11.2026)
+- Standort per GPS, Adresssuche oder Tippen auf die Karte
+- Die fünf nächsten Hydranten nach **Fußweg** (Luftlinie als Rückfall, wenn der Routingdienst nicht erreichbar ist)
+- **Bezirksauswahl**: Grenze, Anzahl und nur die Hydranten des gewählten Bezirks
+- **Teilen-Links** für einzelne Hydranten (`/?h=<ID>`) und Bezirke (`/?bezirk=<Nr>`)
+- **Offline nutzbar und installierbar (PWA)**: Hydrantendaten, App und bereits angesehene Kartenausschnitte bleiben auf dem Gerät
+- Navigation zu Fuß über Google Maps oder Apple Karten
+- Fehlende Hydranten melden und Notizen zu bestehenden Hydranten ergänzen (per E-Mail zur Prüfung)
+- Am Smartphone: Karte im Vollbild, Suche und Ergebnisse in einem hochziehbaren Panel
+- Impressum (`/impressum`) und Datenschutzerklärung (`/datenschutz`)
 - SMTP mit TLS, Eingabevalidierung, Honeypot und Anfragelimits
-- Docker Compose und Caddy für HTTPS auf einer Proxmox-VM
+
+## Aufbau
+
+| Pfad | Inhalt |
+| --- | --- |
+| `server.mjs` | Express-Server: statische Dateien, `/api/search` (Nominatim), `/api/walk` (Fußwege), `/api/report`, `/api/note`, `/api/health` |
+| `public/index.html`, `app.js`, `style.css` | Oberfläche (Leaflet + MarkerCluster, ohne Build-Schritt) |
+| `public/sw.js`, `manifest.webmanifest`, `icons/` | Offline-Modus, Installation, Logo und App-Icons |
+| `public/impressum.html`, `datenschutz.html`, `404.html` | Rechtliche Seiten und Fehlerseite |
+| `public/data/hydrants.geojson` | Hydranten (Stadt Wien, `ogdwien:HYDRANTOGD`) |
+| `public/data/districts.geojson` | Bezirksgrenzen, auf ca. 10 m vereinfacht (Stadt Wien, `ogdwien:BEZIRKSGRENZEOGD`) |
+| `scripts/update-data.mjs` | Lädt beide Datensätze neu und prüft sie |
+| `deploy/` | systemd-Dienst und Installationsskript für den Betrieb ohne Docker |
 
 ## Lokal starten
 
@@ -55,7 +72,9 @@ Caddy beschafft das Zertifikat automatisch, sobald DNS und eingehende Ports stim
 - `https://hydranten.oschmanndigital.at/api/health` liefert `ok: true`; `reporting: true` bedeutet nur, dass SMTP konfiguriert ist, noch nicht, dass die Zustellung geprüft ist.
 - Karte öffnen, Standort/GPS und Adresssuche prüfen. GPS erfordert HTTPS oder localhost.
 - Echte Testmeldung senden und den Eingang im iCloud-Postfach kontrollieren. Zustellung und Spam-Einstufung lassen sich erst mit den richtigen SMTP-Zugangsdaten prüfen.
-- Betreiberangaben und die Datenschutzerklärung vor Veröffentlichung mit den tatsächlichen Angaben und Aufbewahrungsfristen ergänzen.
+- **Vor Veröffentlichung:** in `public/impressum.html` und `public/datenschutz.html` die gelb markierte Anschrift (`[Anschrift ergänzen]`) eintragen und die Aufbewahrungsfrist für Meldungs-E-Mails (derzeit zwölf Monate) prüfen.
+- `/?h=<Hydranten-ID>` öffnet direkt den Hydranten; eine Standortsuche zeigt „Fußweg“ neben den Ergebnissen. Steht dort „Luftlinie“, ist `routing.openstreetmap.de` vom Server aus nicht erreichbar.
+- In den Entwicklertools unter „Application“ prüfen, ob der Service Worker aktiv ist. Danach Flugmodus: Karte, Hydranten und Nächste-Suche funktionieren weiter.
 
 ## Daten aktualisieren
 
@@ -71,13 +90,13 @@ sudo docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/public/data:/ap
 sudo docker compose up -d --build
 ```
 
-Das Update validiert Punktkoordinaten und die vom WFS gemeldete Gesamtzahl und ersetzt die Datei erst nach vollständigem Download. Kein automatischer Aktualisierungszeitplan ist eingerichtet. Die Website zeigt den Zeitstempel des Datenabrufs.
+Das Update lädt Hydranten und Bezirksgrenzen, validiert Punktkoordinaten, die vom WFS gemeldete Gesamtzahl und alle 23 Bezirke und ersetzt die Dateien erst nach vollständigem Download. Installierte Apps erhalten neue Daten beim nächsten Aufruf im Hintergrund; nach Änderungen an App-Dateien `VERSION` in `public/sw.js` erhöhen. Kein automatischer Aktualisierungszeitplan ist eingerichtet. Die Website zeigt den Zeitstempel des Datenabrufs.
 
-Datenquelle: **Stadt Wien – data.wien.gv.at**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de), [Datensatzbeschreibung](https://www.data.gv.at/datasets/e8b9bb31-5ad1-4cc3-a0ae-177c93671d0b?locale=de), WFS-Layer `ogdwien:HYDRANTOGD`. Vollständigkeit bezieht sich auf den gelieferten Datensatz, nicht auf alle tatsächlich existierenden oder betriebsbereiten Hydranten. Die Daten enthalten Standort und Objekt-ID, keine bestätigte Leistungsangabe oder Adresse. Nutzerhinweise werden per E-Mail geprüft und nicht automatisch in den amtlichen Datenbestand aufgenommen.
+Datenquelle: **Stadt Wien – data.wien.gv.at**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de), [Datensatzbeschreibung](https://www.data.gv.at/datasets/e8b9bb31-5ad1-4cc3-a0ae-177c93671d0b?locale=de), WFS-Layer `ogdwien:HYDRANTOGD`. Vollständigkeit bezieht sich auf den gelieferten Datensatz, nicht auf alle tatsächlich existierenden oder betriebsbereiten Hydranten. Die Daten enthalten Standort und Objekt-ID, keine bestätigte Leistungsangabe, keinen Typ und keine Adresse. Den Bezirk berechnet der Browser aus den Bezirksgrenzen. Nutzerhinweise werden per E-Mail geprüft und nicht automatisch in den amtlichen Datenbestand aufgenommen.
 
 ## Betrieb und Datenschutz
 
-GPS-Auswertung und Distanzberechnung erfolgen lokal im Browser. Die Adresssuche verwendet einen Server-Proxy mit maximal einer neuen Anfrage je 1,1 Sekunden, kurzem In-Memory-Cache und ohne Autovervollständigung. Kartenausschnitte werden direkt von OpenStreetMap geladen. Es gelten die [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) und die [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/). Bei größerer Last eigenen oder kommerziellen Karten-/Geocoding-Dienst einsetzen.
+GPS-Auswertung und die Suche der nächsten Kandidaten erfolgen im Browser. Für die 15 nächstgelegenen Hydranten fragt der Server über `/api/walk` die Fußwegdistanz beim [FOSSGIS-Routingdienst](https://routing.openstreetmap.de) (OSRM, Profil „foot“) ab; der Dienst sieht nur die Server-IP. Anfragen sind auf 20 je Minute und IP begrenzt und werden im Arbeitsspeicher zwischengespeichert. Die Adresssuche verwendet einen Server-Proxy mit maximal einer neuen Anfrage je 1,1 Sekunden, kurzem In-Memory-Cache und ohne Autovervollständigung. Kartenausschnitte werden direkt von OpenStreetMap geladen; der Service Worker speichert nur bereits angesehene Kacheln (höchstens 600) und lädt nichts vor. Es gelten die [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/), die [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) und die [Hinweise des FOSSGIS-Routings](https://routing.openstreetmap.de). Bei größerer Last eigene oder kommerzielle Karten-, Geocoding- und Routingdienste einsetzen.
 
 Berichte werden ausschließlich per SMTP übertragen und nicht in einer zusätzlichen Datenbank gespeichert. Mail-Aufbewahrung wird im Postfach geregelt. Das Meldeformular ist auf fünf Versuche je IP und Stunde begrenzt; diese Grenze ist pro Serverprozess und wird bei Neustart zurückgesetzt. Keine SMTP-Geheimnisse in Git committen. `.env` ist von Git und dem Docker-Build ausgeschlossen. Proxmox-Backups der VM einschließlich Caddy-Zertifikatsvolumes und `.env` geschützt aufbewahren.
 
@@ -87,7 +106,7 @@ Berichte werden ausschließlich per SMTP übertragen und nicht in einer zusätzl
 npm test
 ```
 
-Tests prüfen gültige Meldungen, festen Empfänger, fehlerhafte Eingaben, fremde Origins, fehlenden/fehlerhaften SMTP-Versand, Ratenbegrenzung und Vollständigkeit/Plausibilität des eingebundenen Datensatzes. Echter SMTP-Versand und Produktivbereitstellung sind separat zu prüfen.
+Tests prüfen gültige Meldungen, festen Empfänger, fehlerhafte Eingaben, fremde Origins, fehlenden/fehlerhaften SMTP-Versand, Ratenbegrenzung, den Fußweg-Proxy (Validierung, Cache, Fehlerfall), die Auslieferung von Impressum, Datenschutz, Manifest und 404-Seite sowie Vollständigkeit/Plausibilität von Hydranten- und Bezirksdaten. GitHub Actions führt sie bei jedem Push aus. Echter SMTP-Versand und Produktivbereitstellung sind separat zu prüfen.
 
 ## Direkter Betrieb als Dienst im Proxmox-CT
 
