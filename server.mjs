@@ -4,7 +4,9 @@ import nodemailer from 'nodemailer';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {readFileSync, statSync} from 'node:fs';
+import {NoteStore} from './notes.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
+const ASSET_VERSION=(readFileSync(path.join(root,'public/index.html'),'utf8').match(/app\.js\?v=(\d+)/)||[])[1]||'1';
 // Empfänger der Meldungen: MAIL_TO, sonst die Absenderadresse aus MAIL_FROM (Postfach des Mailkontos)
 export function recipient(env){
  const raw=env.MAIL_TO||env.MAIL_FROM||'';
@@ -45,7 +47,7 @@ export function districtOf(data,h){
  if(!h.district) h.district=data.districts.find(d=>d.polygons.some(p=>insideRing([h.lng,h.lat],p[0])&&!p.slice(1).some(r=>insideRing([h.lng,h.lat],r))))||null;
  return h.district;
 }
-export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
+export function createApp({sendMail,env=process.env,fetchImpl=fetch,noteStore}={}) {
  const app=express();
  if(env.TRUST_PROXY) app.set('trust proxy',Number(env.TRUST_PROXY));
  app.disable('x-powered-by');
@@ -68,18 +70,66 @@ export function createApp({sendMail,env=process.env,fetchImpl=fetch}={}) {
    res.json({ok:true});
   } catch(err) {console.error('Mailversand (Meldung) fehlgeschlagen:',describeMailError(err));res.status(502).json({error:'Die E-Mail konnte nicht versendet werden. Bitte erneut versuchen.'});}
  });
+ const notes=noteStore||new NoteStore(env.DATA_DIR||path.join(root,'var'));
+ const baseUrl=req=>(env.PUBLIC_URL||`${req.protocol}://${req.get('host')}`).replace(/\/$/,'');
+ const sameOrigin=req=>!req.headers.origin||req.headers.origin===env.PUBLIC_URL||(!env.PUBLIC_URL&&/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(req.headers.origin));
  app.post('/api/note',rateLimit({windowMs:3600000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'Zu viele Notizen. Bitte später erneut versuchen.'}}),async(req,res)=>{
-  if(req.headers.origin && req.headers.origin!==env.PUBLIC_URL && !(!env.PUBLIC_URL&&/^http:\/\/localhost:\d+$/.test(req.headers.origin))) return res.status(403).json({error:'Anfrage nicht erlaubt.'});
+  if(!sameOrigin(req)) return res.status(403).json({error:'Anfrage nicht erlaubt.'});
   const {lat,lng,hydrantId,description,email='',website=''}=req.body||{};
   if(website) return res.status(400).json({error:'Notiz ungültig.'});
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<48.10||lat>48.34||lng<16.17||lng>16.59||typeof hydrantId!=='string'||!/^\d{1,12}$/.test(hydrantId)||typeof description!=='string'||description.trim().length<3||description.length>1000||typeof email!=='string'||email.length>254||(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return res.status(400).json({error:'Bitte eine gültige Notiz und einen Hydranten in Wien angeben.'});
   if(!configured) return res.status(503).json({error:'Der E-Mail-Versand ist noch nicht eingerichtet. Bitte später erneut versuchen.'});
+  let note;
+  try { note=await notes.add({hydrantId,lat,lng,text:description.trim(),email}); }
+  catch(err) { if(err.code!=='FULL') console.error('Notiz speichern fehlgeschlagen:',err.message); return res.status(503).json({error:'Notizen können gerade nicht angenommen werden. Bitte später erneut versuchen.'}); }
+  const review=`${baseUrl(req)}/notiz/${note.id}?sig=${notes.sign(note.id)}`;
   try {
-   const message={from:env.MAIL_FROM,to:RECIPIENT,...(email?{replyTo:email}:{}),subject:`Hydrantenkarte Wien: Notiz zu Hydrant ${hydrantId}`,text:`Neue Notiz zur Prüfung (noch nicht öffentlich)\n\nHydrant: ${hydrantId}\nStandort: ${lat}, ${lng}\nhttps://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=19/${lat}/${lng}\n\n${description.trim()}\n\nKontakt: ${email||'Nicht angegeben'}`};
+   const message={from:env.MAIL_FROM,to:RECIPIENT,...(email?{replyTo:email}:{}),subject:`Hydrantenkarte: Notiz zu Hydrant ${hydrantId} prüfen`,text:`Neue Notiz zur Prüfung (noch nicht öffentlich)\n\nHydrant: ${hydrantId}\nStandort: ${lat}, ${lng}\nhttps://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=19/${lat}/${lng}\n\n${note.text}\n\nKontakt: ${email||'Nicht angegeben'}\n\nVeröffentlichen oder ablehnen:\n${review}\n\nÜber denselben Link lässt sich die Notiz später wieder entfernen.`};
    const result=await (sendMail?sendMail(message):transport.sendMail(message));
    if(result?.rejected?.length) throw new Error('Mail rejected');
    res.json({ok:true});
-  } catch(err) {console.error('Mailversand (Notiz) fehlgeschlagen:',describeMailError(err));res.status(502).json({error:'Die Notiz konnte nicht versendet werden. Bitte erneut versuchen.'});}
+  } catch(err) {
+   console.error('Mailversand (Notiz) fehlgeschlagen:',describeMailError(err));
+   await notes.remove(note.id).catch(()=>{});
+   res.status(502).json({error:'Die Notiz konnte nicht versendet werden. Bitte erneut versuchen.'});
+  }
+ });
+ app.get('/api/notes',async(_req,res,next)=>{
+  try { res.set('Cache-Control','no-cache').json(await notes.published()); } catch(err) { next(err); }
+ });
+
+ // Prüfseite für den Betreiber, erreichbar nur über den signierten Link aus der E-Mail
+ const moderation=rateLimit({windowMs:600000,limit:60,legacyHeaders:false});
+ const statusText={pending:'Wartet auf Prüfung',published:'Veröffentlicht',rejected:'Abgelehnt'};
+ function moderationPage(note,sig,message=''){
+  const e=escapeHtml;
+  const button=(action,label,cls='')=>`<form method="post"><input type="hidden" name="sig" value="${e(sig)}"><input type="hidden" name="action" value="${action}"><button class="${cls}">${label}</button></form>`;
+  const actions=note.status==='published'?button('reject','Wieder entfernen','outline'):note.status==='rejected'?button('publish','Doch veröffentlichen','primary'):button('publish','Veröffentlichen','primary')+button('reject','Ablehnen','outline');
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Notiz prüfen · Hydranten Wien</title><link rel="icon" href="/icons/icon.svg"><link rel="stylesheet" href="/style.css?v=${ASSET_VERSION}"></head><body class="page"><article class="page-body moderation">
+<h1>Notiz prüfen</h1>${message?`<p class="notice">${e(message)}</p>`:''}
+<p><strong>Hydrant ${e(note.hydrantId)}</strong> · <a href="/?h=${e(note.hydrantId)}" target="_blank">auf der Karte ↗</a><br><span class="small">Eingegangen am ${new Date(note.created).toLocaleString('de-AT',{timeZone:'Europe/Vienna'})}</span></p>
+<blockquote>${e(note.text).replace(/\n/g,'<br>')}</blockquote>
+<p class="small">Kontakt (wird nie veröffentlicht): ${note.email?e(note.email):'nicht angegeben'}</p>
+<p>Status: <strong>${statusText[note.status]||e(note.status)}</strong></p><div class="moderation-actions">${actions}</div></article></body></html>`;
+ }
+ app.get('/notiz/:id',moderation,async(req,res,next)=>{
+  try {
+   const note=await notes.get(req.params.id);
+   if(!note||!notes.verify(note.id,req.query.sig)) return res.status(404).sendFile(path.join(root,'public/404.html'));
+   res.set({'Cache-Control':'no-store','Referrer-Policy':'same-origin'}).type('html').send(moderationPage(note,req.query.sig,{published:'Die Notiz ist jetzt öffentlich.',rejected:'Die Notiz ist nicht öffentlich.'}[req.query.done]||''));
+  } catch(err) { next(err); }
+ });
+ app.post('/notiz/:id',moderation,express.urlencoded({extended:false,limit:'2kb'}),async(req,res,next)=>{
+  try {
+   if(!sameOrigin(req)) return res.status(403).send('Anfrage nicht erlaubt.');
+   const note=await notes.get(req.params.id);
+   const sig=req.body?.sig;
+   if(!note||!notes.verify(note.id,sig)) return res.status(404).sendFile(path.join(root,'public/404.html'));
+   const status={publish:'published',reject:'rejected'}[req.body.action];
+   if(!status) return res.status(400).send('Ungültige Aktion.');
+   await notes.setStatus(note.id,status);
+   res.redirect(303,`/notiz/${note.id}?sig=${encodeURIComponent(sig)}&done=${status}`);
+  } catch(err) { next(err); }
  });
  let nextSearch=0;const cache=new Map();
  app.get('/api/search',rateLimit({windowMs:60000,limit:15,legacyHeaders:false,message:{error:'Bitte kurz warten.'}}),async(req,res)=>{

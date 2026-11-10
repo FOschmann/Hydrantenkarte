@@ -12,6 +12,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      # Notizen und aktualisierte Daten
+      - app_data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -31,5 +34,6 @@ services:
     depends_on:
       - app
 volumes:
+  app_data:
   caddy_data:
   caddy_config:

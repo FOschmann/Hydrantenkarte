@@ -10,6 +10,7 @@ User=hydrantenkarte
 Group=hydrantenkarte
 # Aktuelle Daten außerhalb des Git-Ordners, damit git pull nicht blockiert
 StateDirectory=hydrantenkarte
+StateDirectoryMode=0750
 Environment=DATA_DIR=/var/lib/hydrantenkarte
 ExecStart=/usr/bin/node /opt/hydrantenkarte/scripts/update-data.mjs
 ProtectSystem=strict
