@@ -1,15 +1,15 @@
 'use strict';
 // Bei jeder Änderung an app.js oder style.css: VERSION hier und ?v= in den HTML-Dateien erhöhen.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const APP = 'hydranten-app-' + VERSION;
 const TILES = 'hydranten-tiles';
-const MAX_TILES = 600;
+const MAX_TILES = 800;
 const PRECACHE = [
-  '/', '/app.js?v=3', '/style.css?v=3', '/manifest.webmanifest', '/impressum', '/datenschutz',
+  '/', '/app.js?v=4', '/style.css?v=4', '/manifest.webmanifest', '/impressum', '/datenschutz',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/favicon-32.png',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css', '/vendor/leaflet/images/marker-icon.png', '/vendor/leaflet/images/marker-shadow.png',
   '/vendor/cluster/leaflet.markercluster.js', '/vendor/cluster/MarkerCluster.css', '/vendor/cluster/MarkerCluster.Default.css',
-  '/data/hydrants.geojson', '/data/districts.geojson'
+  '/data/hydrants.json', '/data/districts.geojson'
 ];
 
 self.addEventListener('install', e => {
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(request.url);
 
   // Kartenkacheln: nur bereits angesehene Ausschnitte werden gespeichert (kein Vorladen)
-  if (url.hostname === 'tile.openstreetmap.org') {
+  if (url.hostname === 'mapsneu.wien.gv.at' && url.pathname.startsWith('/basemap/')) {
     e.respondWith(caches.open(TILES).then(async cache => {
       const cached = await cache.match(request);
       if (cached) return cached;

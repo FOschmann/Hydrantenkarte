@@ -1,4 +1,8 @@
-import {writeFile, rename} from 'node:fs/promises';
+import {writeFile, rename, mkdir} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+
+// Ziel: DATA_DIR (z. B. /var/lib/hydrantenkarte), sonst public/data im Projekt
+const target = process.env.DATA_DIR ? pathToFileURL(process.env.DATA_DIR.replace(/\/?$/, '/')) : new URL('../public/data/', import.meta.url);
 
 const WFS = 'https://data.wien.gv.at/daten/geo?service=WFS&request=GetFeature&version=1.1.0&srsName=EPSG:4326&outputFormat=json&typeName=';
 
@@ -8,7 +12,8 @@ async function download(layer) {
   return response.json();
 }
 async function save(name, data) {
-  const file = new URL(`../public/data/${name}`, import.meta.url);
+  await mkdir(target, {recursive: true});
+  const file = new URL(name, target);
   const tmp = new URL(file + '.tmp');
   await writeFile(tmp, JSON.stringify(data));
   await rename(tmp, file);
@@ -39,7 +44,7 @@ export function simplify(points, tolerance = 0.00008) {
 }
 
 const hydrants = await download('ogdwien:HYDRANTOGD');
-if (hydrants.type !== 'FeatureCollection' || hydrants.features?.length < 10000 || Number(hydrants.totalFeatures) !== hydrants.features.length ||
+if (hydrants.type !== 'FeatureCollection' || hydrants.features?.some(f => !Number.isInteger(f.properties?.OBJECTID)) || hydrants.features?.length < 10000 || Number(hydrants.totalFeatures) !== hydrants.features.length ||
   hydrants.features.some(f => f.geometry?.type !== 'Point' || f.geometry.coordinates[0] < 16 || f.geometry.coordinates[0] > 17 || f.geometry.coordinates[1] < 48 || f.geometry.coordinates[1] > 49))
   throw Error('Hydrantendatensatz unvollständig oder unerwartet. Vorherige Daten bleiben erhalten.');
 
@@ -59,7 +64,13 @@ const districts = {
   })).sort((a, b) => a.properties.nr - b.properties.nr)
 };
 
-await save('hydrants.geojson', hydrants);
+// Kompaktes Format: [Objekt-ID, Breite, Länge] je Hydrant, ~85 % kleiner als GeoJSON
+await save('hydrants.json', {
+  source: 'Stadt Wien – data.wien.gv.at, HYDRANTOGD, CC BY 4.0',
+  timeStamp: hydrants.timeStamp || new Date().toISOString(),
+  fields: ['id', 'lat', 'lng'],
+  data: hydrants.features.map(f => [f.properties.OBJECTID, Number(f.geometry.coordinates[1].toFixed(6)), Number(f.geometry.coordinates[0].toFixed(6))])
+});
 await save('districts.geojson', districts);
-console.log(`${hydrants.features.length} Hydranten und ${districts.features.length} Bezirke aktualisiert.`);
-console.log('Nicht vergessen: VERSION in public/sw.js erhöhen, damit installierte Apps die neuen Daten laden.');
+console.log(`${hydrants.features.length} Hydranten und ${districts.features.length} Bezirke aktualisiert (${target.pathname}).`);
+

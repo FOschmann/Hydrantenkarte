@@ -1,0 +1,18 @@
+[Unit]
+Description=Hydrantenkarte Wien: Hydranten- und Bezirksdaten aktualisieren
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hydrantenkarte
+User=hydrantenkarte
+Group=hydrantenkarte
+# Aktuelle Daten außerhalb des Git-Ordners, damit git pull nicht blockiert
+StateDirectory=hydrantenkarte
+Environment=DATA_DIR=/var/lib/hydrantenkarte
+ExecStart=/usr/bin/node /opt/hydrantenkarte/scripts/update-data.mjs
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

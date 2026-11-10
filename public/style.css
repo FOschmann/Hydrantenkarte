@@ -83,10 +83,14 @@ footer p { margin: 0 0 8px; }
 /* Karte */
 .map-area { position: relative; min-width: 0; }
 #map { height: 100%; background: #e6eadf; }
-.map-tip { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 500; background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 30px; font-size: 13px; box-shadow: 0 5px 20px #172b2930; max-width: calc(100% - 100px); text-align: center; }
-.offline { position: absolute; top: 16px; left: 16px; z-index: 500; background: #fff; border: 1px solid var(--line); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.map-tip { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 500; background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 30px; font-size: 13px; box-shadow: 0 5px 20px #172b2930; max-width: calc(100% - 100px); text-align: center; }
+.offline { position: absolute; top: 56px; left: 12px; z-index: 500; background: #fff; border: 1px solid var(--line); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .map-button { position: absolute; right: 10px; top: 86px; z-index: 500; width: 34px; height: 34px; background: #fff; border: 2px solid rgba(0,0,0,.2); border-radius: 4px; font-size: 17px; line-height: 1; padding: 0; background-clip: padding-box; }
 .leaflet-control-zoom { border: 2px solid rgba(0,0,0,.2) !important; }
+.basemap-switch { position: absolute; top: 12px; left: 12px; z-index: 500; display: flex; background: #fff; border: 2px solid rgba(0,0,0,.2); border-radius: 8px; overflow: hidden; background-clip: padding-box; }
+.basemap-switch button { border: 0; background: #fff; padding: 6px 12px; font-size: 12px; font-weight: 650; min-height: 32px; }
+.basemap-switch button + button { border-left: 1px solid var(--line); }
+.basemap-switch button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 body.picking #map { cursor: crosshair; }
 
 .hydrant i { display: block; width: 14px; height: 14px; margin: 2px; background: var(--accent); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 1px 4px #172b2970; }
@@ -159,8 +163,8 @@ label span { font-weight: 400; color: var(--muted); }
   .panel[data-state="peek"] .intro { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .map-area .leaflet-bottom { bottom: calc(188px + var(--safe-bottom)); }
-  .map-tip { top: 12px; font-size: 12px; }
-  .offline { top: 12px; left: 12px; }
+  .map-tip { top: 56px; font-size: 12px; }
+  .offline { top: 54px; left: 12px; }
   .toast { bottom: calc(200px + var(--safe-bottom)); }
 }
 

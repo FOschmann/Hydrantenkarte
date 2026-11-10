@@ -6,6 +6,16 @@
 <meta name="theme-color" content="#172b29">
 <meta name="description" content="Karte aller Hydranten in Wien aus dem offenen Datensatz der Stadt Wien. Nächste Hydranten zu Fuß finden und Navigation starten.">
 <title>Hydranten Wien</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hydranten Wien">
+<meta property="og:locale" content="de_AT">
+<meta property="og:title" content="Hydranten Wien">
+<meta property="og:description" content="Karte aller Hydranten in Wien aus dem offenen Datensatz der Stadt Wien. Nächste Hydranten zu Fuß finden und Navigation starten.">
+<meta property="og:image" content="/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Hydranten-Logo mit dem Schriftzug Hydranten Wien">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
@@ -13,10 +23,10 @@
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/vendor/cluster/MarkerCluster.css">
 <link rel="stylesheet" href="/vendor/cluster/MarkerCluster.Default.css">
-<link rel="stylesheet" href="/style.css?v=3">
+<link rel="stylesheet" href="/style.css?v=4">
 <script defer src="/vendor/leaflet/leaflet.js"></script>
 <script defer src="/vendor/cluster/leaflet.markercluster.js"></script>
-<script defer src="/app.js?v=3"></script>
+<script defer src="/app.js?v=4"></script>
 </head>
 <body>
 <header>
@@ -70,6 +80,7 @@
   <section class="map-area" aria-label="Interaktive Hydrantenkarte">
     <div id="map"></div>
     <div class="map-tip" id="map-tip" hidden></div>
+    <div class="basemap-switch" role="group" aria-label="Kartenansicht"><button type="button" data-layer="Karte" aria-pressed="true">Karte</button><button type="button" data-layer="Luftbild" aria-pressed="false">Luftbild</button></div>
     <div class="offline" id="offline" hidden>Offline · gespeicherte Daten</div>
     <button id="overview" class="map-button" type="button" aria-label="Ganz Wien anzeigen" title="Ganz Wien anzeigen">⛶</button>
   </section>

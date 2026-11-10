@@ -11,6 +11,8 @@ if [ ! -f /etc/hydrantenkarte.env ]; then
   echo HOST=127.0.0.1 >> /etc/hydrantenkarte.env
   chmod 600 /etc/hydrantenkarte.env
 fi
-cp deploy/hydrantenkarte.service /etc/systemd/system/hydrantenkarte.service
+cp deploy/hydrantenkarte.service deploy/hydrantenkarte-update.service deploy/hydrantenkarte-update.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now hydrantenkarte
+systemctl restart hydrantenkarte
+systemctl enable --now hydrantenkarte-update.timer

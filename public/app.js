@@ -7,11 +7,29 @@ const mobileQuery = matchMedia('(max-width: 760px)');
 /* ---------- Karte ---------- */
 const map = L.map('map', {zoomControl: false}).setView(VIENNA, 12);
 L.control.zoom({position: 'topright'}).addTo(map);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  crossOrigin: true,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Hydranten: Stadt Wien'
-}).addTo(map);
+const BASEMAP = 'https://mapsneu.wien.gv.at/basemap/';
+const ATTRIBUTION = 'Grundkarte: <a href="https://basemap.at" target="_blank" rel="noreferrer">basemap.at</a> · Hydranten: Stadt Wien';
+const tileOptions = {maxZoom: 19, crossOrigin: true, attribution: ATTRIBUTION};
+const baseLayers = {
+  'Karte': L.tileLayer(BASEMAP + 'geolandbasemap/normal/google3857/{z}/{y}/{x}.png', tileOptions),
+  'Luftbild': L.layerGroup([
+    L.tileLayer(BASEMAP + 'bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg', tileOptions),
+    L.tileLayer(BASEMAP + 'bmapoverlay/normal/google3857/{z}/{y}/{x}.png', {...tileOptions, attribution: ''})
+  ])
+};
+let baseName = null;
+function setBase(name) {
+  if (!(name in baseLayers) || name === baseName) return;
+  if (baseName) map.removeLayer(baseLayers[baseName]);
+  baseLayers[name].addTo(map);
+  baseName = name;
+  document.querySelectorAll('.basemap-switch button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.layer === name)));
+  try { localStorage.setItem('basemap', name); } catch {}
+}
+let savedBase = 'Karte';
+try { savedBase = localStorage.getItem('basemap') || 'Karte'; } catch {}
+setBase(savedBase in baseLayers ? savedBase : 'Karte');
+document.querySelectorAll('.basemap-switch button').forEach(b => { b.onclick = () => setBase(b.dataset.layer); });
 const clusters = L.markerClusterGroup({chunkedLoading: true, maxClusterRadius: 45, disableClusteringAtZoom: 18});
 map.addLayer(clusters);
 const icon = L.divIcon({className: 'hydrant', html: '<i></i>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -8]});
@@ -375,10 +393,9 @@ addEventListener('resize', () => map.invalidateSize());
 
 /* ---------- Daten laden ---------- */
 const getJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(url); return r.json(); });
-Promise.all([getJSON('/data/hydrants.geojson'), getJSON('/data/districts.geojson').catch(() => null)]).then(([data, districtData]) => {
-  hydrants = data.features.filter(f => f.geometry?.type === 'Point').map(f => {
-    const [lng, lat] = f.geometry.coordinates;
-    const h = {id: String(f.properties.OBJECTID), lat, lng, district: null};
+Promise.all([getJSON('/data/hydrants.json'), getJSON('/data/districts.geojson').catch(() => null)]).then(([data, districtData]) => {
+  hydrants = data.data.map(([id, lat, lng]) => {
+    const h = {id: String(id), lat, lng, district: null};
     h.marker = L.marker([lat, lng], {icon, keyboard: false}).bindPopup(() => popup(h));
     byId.set(h.id, h);
     return h;
