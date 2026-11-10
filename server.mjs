@@ -26,6 +26,19 @@ export function createApp({sendMail,env=process.env}={}) {
    res.json({ok:true});
   } catch {res.status(502).json({error:'Die E-Mail konnte nicht versendet werden. Bitte erneut versuchen.'});}
  });
+ app.post('/api/note',rateLimit({windowMs:3600000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'Zu viele Notizen. Bitte später erneut versuchen.'}}),async(req,res)=>{
+  if(req.headers.origin && req.headers.origin!==env.PUBLIC_URL && !(!env.PUBLIC_URL&&/^http:\/\/localhost:\d+$/.test(req.headers.origin))) return res.status(403).json({error:'Anfrage nicht erlaubt.'});
+  const {lat,lng,hydrantId,description,email='',website=''}=req.body||{};
+  if(website) return res.status(400).json({error:'Notiz ungültig.'});
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<48.10||lat>48.34||lng<16.17||lng>16.59||typeof hydrantId!=='string'||!/^\d{1,12}$/.test(hydrantId)||typeof description!=='string'||description.trim().length<3||description.length>1000||typeof email!=='string'||email.length>254||(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return res.status(400).json({error:'Bitte eine gültige Notiz und einen Hydranten in Wien angeben.'});
+  if(!configured) return res.status(503).json({error:'Der E-Mail-Versand ist noch nicht eingerichtet. Bitte später erneut versuchen.'});
+  try {
+   const message={from:env.MAIL_FROM,to:'floh.schmann@icloud.com',...(email?{replyTo:email}:{}),subject:`Hydrantenkarte Wien: Notiz zu Hydrant ${hydrantId}`,text:`Neue Notiz zur Prüfung (noch nicht öffentlich)\n\nHydrant: ${hydrantId}\nStandort: ${lat}, ${lng}\nhttps://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=19/${lat}/${lng}\n\n${description.trim()}\n\nKontakt: ${email||'Nicht angegeben'}`};
+   const result=await (sendMail?sendMail(message):transport.sendMail(message));
+   if(result?.rejected?.length) throw new Error('Mail rejected');
+   res.json({ok:true});
+  } catch {res.status(502).json({error:'Die Notiz konnte nicht versendet werden. Bitte erneut versuchen.'});}
+ });
  let nextSearch=0;const cache=new Map();
  app.get('/api/search',rateLimit({windowMs:60000,limit:15,legacyHeaders:false,message:{error:'Bitte kurz warten.'}}),async(req,res)=>{
   const q=String(req.query.q||'').trim();if(q.length<3||q.length>160)return res.status(400).json({error:'Bitte eine Adresse eingeben.'});
